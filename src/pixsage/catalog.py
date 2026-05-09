@@ -176,10 +176,16 @@ class Catalog:
         return {(r["tag"], r["source"]) for r in cur}
 
     def rekey_photo(self, old_sha256: str, new_sha256: str) -> None:
-        """Update the primary key of a photo + its tags. No-op if old==new."""
+        """Update the primary key of a photo + its tags. No-op if old==new.
+
+        Defers FK checking to commit time so the intermediate state
+        (photos.sha256 updated but tags.sha256 not yet, or vice versa)
+        doesn't trip the tags→photos foreign key.
+        """
         if old_sha256 == new_sha256:
             return
         with self._conn:
+            self._conn.execute("PRAGMA defer_foreign_keys = ON")
             self._conn.execute(
                 "UPDATE photos SET sha256 = ? WHERE sha256 = ?",
                 (new_sha256, old_sha256),
