@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ filename }} — pixsage</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <header>
+    <a href="/" style="color:#eee;text-decoration:none;">← back to search</a>
+    <h1>{{ filename }}</h1>
+  </header>
+  <main>
+    <div class="photo-detail">
+      <img src="/thumb/{{ sha256 }}?size=large" alt="{{ filename }}" />
+      {% if caption %}
+        <p class="caption">{{ caption }}</p>
+      {% endif %}
+      {% if tags %}
+        <ul class="tags">
+          {% for t in tags %}<li>{{ t }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      <a class="more-like-this"
+         href="/similar/{{ sha256 }}"
+         hx-get="/similar/{{ sha256 }}"
+         hx-target="#results"
+         hx-swap="innerHTML"
+         hx-push-url="false">
+        More like this →
+      </a>
+      <section id="results"></section>
+    </div>
+  </main>
+</body>
+</html>

@@ -78,3 +78,22 @@ def register(app: FastAPI) -> None:
         thumbs = app.state.thumbs
         path = thumbs.get_or_create(sha256, source, thumb_size)
         return FileResponse(path, media_type="image/jpeg")
+
+    @app.get("/photo/{sha256}", response_class=HTMLResponse)
+    def photo(request: Request, sha256: str) -> HTMLResponse:
+        catalog = app.state.catalog
+        row = catalog.get_photo(sha256)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
+
+        tags = catalog.get_tags(sha256)
+        return app.state.templates.TemplateResponse(
+            request,
+            "photo.html",
+            {
+                "sha256": sha256,
+                "filename": Path(row["current_path"]).name if row["current_path"] else "?",
+                "caption": row["caption"],
+                "tags": [t.name for t in tags],
+            },
+        )

@@ -90,3 +90,26 @@ def test_thumb_route_404_for_missing_sha(tmp_path: Path):
     with TestClient(app) as client:
         r = client.get("/thumb/nonexistent-sha?size=small")
         assert r.status_code == 404
+
+
+def test_photo_detail_renders_caption_and_filename(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/photo/sha-a")
+        assert r.status_code == 200
+        assert "a red square" in r.text          # caption
+        assert "a.jpg" in r.text                 # filename
+        assert "/similar/sha-a" in r.text        # more-like-this link
+
+
+def test_photo_detail_404(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/photo/nonexistent-sha")
+        assert r.status_code == 404
