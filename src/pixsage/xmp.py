@@ -22,7 +22,6 @@ def _marker(source: str) -> str:
 def merge_xmp(
     existing: XmpFields,
     new_tags: list[Tag],
-    previously_applied: set[tuple[str, str]],
     user_rejected: set[tuple[str, str]],
     caption: str | None,
     caption_overwrite: bool,

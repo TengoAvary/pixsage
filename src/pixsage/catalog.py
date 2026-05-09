@@ -146,13 +146,6 @@ class Catalog:
         )
         return [_Tag(name=r["tag"], confidence=r["confidence"] or 0.0, hierarchy=r["hierarchy"], source=r["source"]) for r in cur]
 
-    def get_previously_applied(self, sha256: str) -> set[tuple[str, str]]:
-        cur = self._conn.execute(
-            "SELECT tag, source FROM tags WHERE sha256 = ?",
-            (sha256,),
-        )
-        return {(r["tag"], r["source"]) for r in cur}
-
     def flag_user_rejections(self, sha256: str, surviving_xmp_tags: set[str]) -> None:
         """Any tag we previously applied that's NOT in surviving_xmp_tags becomes user_rejected."""
         with self._conn:

@@ -12,7 +12,6 @@ def test_merge_adds_new_auto_tags():
     merged = merge_xmp(
         existing=existing,
         new_tags=new,
-        previously_applied={("penguin", "florence2")},  # already in our DB
         user_rejected=set(),
         caption="A penguin.",
         caption_overwrite=False,
@@ -30,7 +29,6 @@ def test_merge_preserves_user_keywords():
     merged = merge_xmp(
         existing=existing,
         new_tags=[Tag("penguin", 1.0, None, "florence2")],
-        previously_applied=set(),
         user_rejected=set(),
         caption=None,
         caption_overwrite=False,
@@ -49,7 +47,6 @@ def test_merge_skips_user_rejected_tags():
             Tag("penguin", 1.0, None, "florence2"),
             Tag("ice", 0.9, None, "florence2"),
         ],
-        previously_applied={("penguin", "florence2"), ("ice", "florence2")},
         user_rejected={("ice", "florence2")},
         caption=None,
         caption_overwrite=False,
@@ -64,7 +61,6 @@ def test_merge_does_not_overwrite_existing_description():
     merged = merge_xmp(
         existing=existing,
         new_tags=[Tag("penguin", 1.0, None, "florence2")],
-        previously_applied=set(),
         user_rejected=set(),
         caption="Auto caption",
         caption_overwrite=False,
@@ -78,7 +74,6 @@ def test_merge_overwrites_when_configured():
     merged = merge_xmp(
         existing=existing,
         new_tags=[],
-        previously_applied=set(),
         user_rejected=set(),
         caption="new",
         caption_overwrite=True,
@@ -95,7 +90,6 @@ def test_merge_marker_tags_per_source():
             Tag("penguin", 1.0, None, "florence2"),
             Tag("bird", 0.9, None, "ram++"),
         ],
-        previously_applied=set(),
         user_rejected=set(),
         caption=None,
         caption_overwrite=False,
@@ -110,7 +104,6 @@ def test_merge_no_marker_tag_when_source_has_no_new_tags():
     merged = merge_xmp(
         existing=existing,
         new_tags=[Tag("penguin", 1.0, None, "florence2")],
-        previously_applied=set(),
         user_rejected=set(),
         caption=None,
         caption_overwrite=False,

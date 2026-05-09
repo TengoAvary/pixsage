@@ -135,7 +135,6 @@ def _process_one(
     merged = merge_xmp(
         existing=existing,
         new_tags=filtered,
-        previously_applied=cat.get_previously_applied(sha),
         user_rejected=user_rejected,
         caption=caption if config.caption.enabled else None,
         caption_overwrite=config.caption.overwrite,
