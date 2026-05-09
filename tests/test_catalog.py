@@ -120,3 +120,16 @@ def test_user_rejected_persists_across_record(tmp_path: Path):
     cat.record_tags(sha, [Tag("ice", 1.0, None, "florence2")])
     assert cat.is_user_rejected(sha, "ice", "florence2") is True
     cat.close()
+
+
+def test_runs_table_records_run(tmp_path: Path):
+    cat = Catalog(tmp_path / "c.db")
+    cat.init_schema()
+    run_id = cat.start_run(config_hash="abc", model_versions={"florence2": "1.0"})
+    assert isinstance(run_id, int)
+    cat.finish_run(run_id, processed=5, skipped=2, errored=0)
+    runs = cat.list_runs()
+    assert len(runs) == 1
+    assert runs[0]["photos_processed"] == 5
+    assert runs[0]["photos_errored"] == 0
+    cat.close()

@@ -37,6 +37,19 @@ CREATE INDEX IF NOT EXISTS idx_tags_sha256 ON tags(sha256);
 CREATE INDEX IF NOT EXISTS idx_tags_source ON tags(source);
 """
 
+SCHEMA_RUNS = """
+CREATE TABLE IF NOT EXISTS runs (
+  run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at TEXT,
+  finished_at TEXT,
+  photos_processed INTEGER,
+  photos_skipped INTEGER,
+  photos_errored INTEGER,
+  config_hash TEXT,
+  model_versions TEXT
+);
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -54,6 +67,7 @@ class Catalog:
         with self._conn:
             self._conn.executescript(SCHEMA_PHOTOS)
             self._conn.executescript(SCHEMA_TAGS)
+            self._conn.executescript(SCHEMA_RUNS)
 
     def close(self) -> None:
         self._conn.close()
@@ -165,3 +179,22 @@ class Catalog:
             (sha256,),
         )
         return {(r["tag"], r["source"]) for r in cur}
+
+    def start_run(self, config_hash: str, model_versions: dict[str, str]) -> int:
+        with self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO runs (started_at, config_hash, model_versions) VALUES (?, ?, ?)",
+                (_now(), config_hash, json.dumps(model_versions, sort_keys=True)),
+            )
+            return int(cur.lastrowid)
+
+    def finish_run(self, run_id: int, processed: int, skipped: int, errored: int) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE runs SET finished_at = ?, photos_processed = ?, photos_skipped = ?, photos_errored = ? WHERE run_id = ?",
+                (_now(), processed, skipped, errored, run_id),
+            )
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        cur = self._conn.execute("SELECT * FROM runs ORDER BY run_id")
+        return [dict(r) for r in cur]
