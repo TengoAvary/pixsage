@@ -20,8 +20,18 @@ app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
 
 def build_taggers(config: Config) -> list[Tagger]:
-    """Production tagger factory. Tests monkeypatch this; Tasks 15–16 replace it with real models."""
-    raise NotImplementedError("Tests must monkeypatch pixsage.cli.build_taggers; real impl arrives in Tasks 15–16.")
+    taggers: list[Tagger] = []
+    if config.florence2.enabled:
+        from pixsage.taggers.florence2 import Florence2Tagger
+        taggers.append(Florence2Tagger())
+    if config.ram_plus_plus.enabled:
+        # Added in Task 16
+        try:
+            from pixsage.taggers.ramplusplus import RamPlusPlusTagger
+            taggers.append(RamPlusPlusTagger())
+        except ImportError:
+            pass
+    return taggers
 
 
 def _config_hash(config: Config) -> str:
