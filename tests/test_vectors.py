@@ -67,3 +67,13 @@ def test_created_at_recorded(store: VectorStore):
     assert ts is not None
     # ISO 8601 ish — at least contains 'T' or '-'
     assert "T" in ts or "-" in ts
+
+
+def test_append_rejects_non_float32(store: VectorStore):
+    with pytest.raises(ValueError, match="must be float32"):
+        store.append("siglip2_image", [("sha1", np.array([1.0, 0.0], dtype=np.float64))])
+
+
+def test_append_rejects_non_1d(store: VectorStore):
+    with pytest.raises(ValueError, match="must be 1-D"):
+        store.append("siglip2_image", [("sha1", np.array([[1.0, 0.0]], dtype=np.float32))])
