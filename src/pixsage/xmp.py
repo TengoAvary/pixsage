@@ -127,8 +127,9 @@ def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
         if target.exists():
             args.append(str(target))
         else:
+            args.append(str(path))   # input: the raw file
             args.append("-o")
-            args.append(str(target))
+            args.append(str(target))  # output: the new sidecar
     else:
         args.append(str(path))
     try:
