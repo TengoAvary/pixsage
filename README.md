@@ -67,6 +67,20 @@ Re-run with `--force` (and optionally `--sample 50` first) to re-tag with the ne
 | `--limit N` | 0 (no limit) | Stop after N photos processed this run |
 | `--dry-run` | off | Run pipeline but skip XMP writes and catalog tag updates |
 
+## Demo corpus
+
+When you don't have access to the photographer's photos, fetch a small public corpus to validate the end-to-end pipeline:
+
+```bash
+python scripts/fetch_demo_corpus.py
+pixsage tag tests/demo_corpus
+exiftool -XMP-dc:Subject -XMP-dc:Description tests/demo_corpus/*.jpg
+```
+
+This downloads ~22 photos from picsum.photos into `tests/demo_corpus/` (gitignored). Use it for "does the pipeline work on real images" testing. For tag-quality validation, point pixsage at the photographer's actual photos.
+
+Add your own URLs to `tests/demo_corpus_urls.txt` to expand the corpus.
+
 ## Manual smoke test
 
 After installation, verify the pipeline end-to-end:

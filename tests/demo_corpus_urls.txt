@@ -1,0 +1,26 @@
+# Curated Lorem Picsum IDs covering varied subjects.
+# Each line: a URL. Lines starting with # and blank lines are ignored.
+# Each photo is downloaded as <id>.jpg into tests/demo_corpus/.
+# Add your own URLs here as needed — any direct-link image URL works.
+https://picsum.photos/id/10/2000/1333
+https://picsum.photos/id/12/2000/1333
+https://picsum.photos/id/20/2000/1333
+https://picsum.photos/id/27/2000/1333
+https://picsum.photos/id/40/2000/1333
+https://picsum.photos/id/65/2000/1333
+https://picsum.photos/id/91/2000/1333
+https://picsum.photos/id/110/2000/1333
+https://picsum.photos/id/128/2000/1333
+https://picsum.photos/id/164/2000/1333
+https://picsum.photos/id/177/2000/1333
+https://picsum.photos/id/200/2000/1333
+https://picsum.photos/id/237/2000/1333
+https://picsum.photos/id/250/2000/1333
+https://picsum.photos/id/293/2000/1333
+https://picsum.photos/id/314/2000/1333
+https://picsum.photos/id/342/2000/1333
+https://picsum.photos/id/433/2000/1333
+https://picsum.photos/id/535/2000/1333
+https://picsum.photos/id/659/2000/1333
+https://picsum.photos/id/823/2000/1333
+https://picsum.photos/id/1000/2000/1333

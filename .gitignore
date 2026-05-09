@@ -36,3 +36,6 @@ Thumbs.db
 # Models / caches
 .cache/
 huggingface/
+
+# Demo corpus (downloaded by scripts/fetch_demo_corpus.py)
+tests/demo_corpus/
