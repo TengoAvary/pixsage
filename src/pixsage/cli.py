@@ -98,6 +98,7 @@ def tag(
         help="Only process these extensions (e.g. '.arw,.cr3'). Mutually exclusive with --skip-extensions.",
     ),
 ) -> None:
+    """Tag photos under PHOTO_ROOT with AI-generated keywords and captions; write XMP and update the catalog."""
     if skip_extensions and only_extensions:
         typer.echo("--skip-extensions and --only-extensions are mutually exclusive", err=True)
         raise typer.Exit(code=2)
@@ -421,7 +422,7 @@ def serve(
         raise typer.Exit(code=1)
 
     from pixsage.web.app import build_app
-    fastapi_app = build_app(photo_root=photo_root, embedder_name=embedder)
+    fastapi_app = build_app(photo_root=photo_root, embedder_name=embedder, catalog_path=catalog_path)
 
     if not no_open:
         import webbrowser, threading

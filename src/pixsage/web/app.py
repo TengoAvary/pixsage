@@ -17,7 +17,7 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 
 
-def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
+def build_app(photo_root: Path, embedder_name: str = "siglip2", catalog_path: Path | None = None) -> FastAPI:
     """Construct the FastAPI app for a photo root.
 
     Loads catalog, vectors, and the search service eagerly so route handlers
@@ -25,7 +25,8 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
     """
     photoindex = photo_root / ".photoindex"
     photoindex.mkdir(exist_ok=True)
-    catalog_path = photoindex / "catalog.db"
+    if catalog_path is None:
+        catalog_path = photoindex / "catalog.db"
     cfg_path = photoindex / "vocabulary.toml"
     ensure_default_config(cfg_path)
     config = load_config(cfg_path)
