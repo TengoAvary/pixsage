@@ -71,6 +71,15 @@ class Catalog:
             self._conn.executescript(SCHEMA_PHOTOS)
             self._conn.executescript(SCHEMA_TAGS)
             self._conn.executescript(SCHEMA_RUNS)
+            self._migrate_add_caption_columns()
+
+    def _migrate_add_caption_columns(self) -> None:
+        cur = self._conn.execute("PRAGMA table_info(photos)")
+        existing = {row["name"] for row in cur.fetchall()}
+        if "caption" not in existing:
+            self._conn.execute("ALTER TABLE photos ADD COLUMN caption TEXT")
+        if "caption_updated_at" not in existing:
+            self._conn.execute("ALTER TABLE photos ADD COLUMN caption_updated_at TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -109,6 +118,14 @@ class Catalog:
             self._conn.execute(
                 "UPDATE photos SET error_reason = ? WHERE sha256 = ?",
                 (reason, sha256),
+            )
+
+    def record_caption(self, sha256: str, caption: str | None) -> None:
+        """Set the caption for a photo. Bumps caption_updated_at to now()."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE photos SET caption = ?, caption_updated_at = ? WHERE sha256 = ?",
+                (caption, _now(), sha256),
             )
 
     def needs_tagging(self, sha256: str, model_versions: dict[str, str]) -> bool:
