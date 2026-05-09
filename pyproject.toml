@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "pixsage"
 version = "0.1.0"
 description = "Photographer's photo corpus pipeline — Tier 1 MVP."
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
