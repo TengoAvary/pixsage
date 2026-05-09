@@ -319,3 +319,38 @@ def test_oom_retry_falls_back_to_smaller_size(tmp_path: Path, make_jpeg, monkeyp
     assert result.exit_code == 0, result.stdout
     assert len(call_log) >= 2
     assert max(call_log[1]) < max(call_log[0])  # second call used a smaller image
+
+
+@needs_exiftool
+def test_tag_records_caption_in_catalog(tmp_path: Path, monkeypatch):
+    """After `pixsage tag`, the photo row should have a caption populated."""
+    from pixsage.catalog import Catalog
+    from pixsage.taggers.mock import MockTagger
+    from pixsage.taggers.base import Tag, TagResult
+    from pixsage.cli import app, build_taggers
+    from typer.testing import CliRunner
+
+    photo_root = tmp_path / "photos"
+    photo_root.mkdir()
+    from PIL import Image
+    Image.new("RGB", (64, 64), color="red").save(photo_root / "a.jpg")
+
+    def fake_build_taggers(cfg):
+        return [MockTagger(
+            name="florence2",
+            model_version="mock-1",
+            tags_per_call=[("cat", 0.9)],
+            caption="a red rectangle",
+        )]
+    monkeypatch.setattr("pixsage.cli.build_taggers", fake_build_taggers)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["tag", str(photo_root)])
+    assert result.exit_code == 0, result.output
+
+    cat = Catalog(photo_root / ".photoindex" / "catalog.db")
+    rows = list(cat.iter_photos_for_embedding())
+    assert len(rows) == 1
+    assert rows[0]["caption"] == "a red rectangle"
+    assert rows[0]["caption_updated_at"] is not None
+    cat.close()

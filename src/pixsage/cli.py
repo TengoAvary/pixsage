@@ -321,6 +321,8 @@ def _process_one(
             sha = new_sha
         cat.record_tags(sha, [t for t in filtered if (t.name, t.source) not in user_rejected])
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
+        if merged.description:
+            cat.record_caption(sha, merged.description)
 
 
 def _is_legacy_marker(s: str) -> bool:
