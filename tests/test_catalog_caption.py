@@ -38,3 +38,18 @@ def test_record_caption_updates_timestamp_on_change(catalog: Catalog, tmp_path: 
     catalog.record_caption("sha1", "second")
     second_ts = catalog.get_photo("sha1")["caption_updated_at"]
     assert second_ts > first_ts
+
+
+def test_record_caption_none_clears_caption(catalog: Catalog, tmp_path: Path):
+    catalog.upsert_photo("sha1", tmp_path / "a.jpg", filesize=10, mtime=1.0)
+    catalog.record_caption("sha1", "text")
+    catalog.record_caption("sha1", None)
+    row = catalog.get_photo("sha1")
+    assert row["caption"] is None
+
+
+def test_record_caption_nonexistent_sha_is_silent(catalog: Catalog):
+    # Calling record_caption on a sha that isn't in photos should silently
+    # update zero rows (UPDATE semantics), not raise.
+    catalog.record_caption("nonexistent-sha", "text")
+    assert catalog.get_photo("nonexistent-sha") is None
