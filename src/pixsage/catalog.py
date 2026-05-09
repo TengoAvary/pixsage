@@ -175,6 +175,16 @@ class Catalog:
         )
         return {(r["tag"], r["source"]) for r in cur}
 
+    def delete_tags(self, sha256: str) -> None:
+        """Wipe every tag row (and their user_rejected flags) for this photo.
+
+        Used by `pixsage tag --rewrite` so the next run starts as if we'd
+        never tagged this photo before. The photo row itself is preserved
+        (we still want to track that we've seen it).
+        """
+        with self._conn:
+            self._conn.execute("DELETE FROM tags WHERE sha256 = ?", (sha256,))
+
     def rekey_photo(self, old_sha256: str, new_sha256: str) -> None:
         """Update the primary key of a photo + its tags. No-op if old==new.
 

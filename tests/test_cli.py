@@ -119,6 +119,78 @@ def test_user_rejection_persists(tmp_path: Path, make_jpeg):
 
 
 @needs_exiftool
+def test_rewrite_strips_prior_auto_tags_keeps_user_keywords(tmp_path: Path, make_jpeg, monkeypatch):
+    """User had a pre-existing keyword. First pixsage run adds penguin/bird.
+    Improve the model (mock v2 → ice/cold) and re-run with --rewrite. Result:
+    user's pre-existing keyword preserved; v1 auto tags wiped; v2 tags present.
+
+    Pre-pixsage manual edit (vs. between-runs manual edit) keeps the file's
+    sha256 stable through the rewrite, which is the realistic flow when the
+    photographer iterates on vocabulary/code without editing XMP themselves.
+    """
+    photo_root = tmp_path / "photos"
+    photo_root.mkdir()
+    a = make_jpeg("a.jpg")
+    a.rename(photo_root / "a.jpg")
+
+    # Photographer's pre-existing keyword (set BEFORE pixsage ever runs).
+    write_xmp(
+        photo_root / "a.jpg",
+        type(read_xmp(photo_root / "a.jpg", is_raw=False))(
+            subject=["antarctica"],
+            hierarchical_subject=[],
+            description=None,
+        ),
+        is_raw=False,
+    )
+
+    # First pixsage run: penguin (florence2) + bird (ram++). User keyword preserved.
+    result_v1 = runner.invoke(app, ["tag", str(photo_root)])
+    assert result_v1.exit_code == 0, result_v1.stdout
+    initial = read_xmp(photo_root / "a.jpg", is_raw=False)
+    assert {"penguin", "bird", "antarctica"}.issubset(set(initial.subject))
+
+    # Switch mock taggers to v2 with different output, then --rewrite.
+    def fake_build_v2(_config):
+        return [
+            MockTagger(name="florence2", model_version="mock-2", tags_per_call=[("ice", 1.0)], caption="Just ice."),
+            MockTagger(name="ram++", model_version="mock-2", tags_per_call=[("cold", 0.9)]),
+        ]
+    monkeypatch.setattr("pixsage.cli.build_taggers", fake_build_v2)
+
+    result_v2 = runner.invoke(app, ["tag", str(photo_root), "--rewrite"])
+    assert result_v2.exit_code == 0, result_v2.stdout
+
+    after = read_xmp(photo_root / "a.jpg", is_raw=False)
+    # Old auto tags are gone.
+    assert "penguin" not in after.subject
+    assert "bird" not in after.subject
+    # Markers re-emitted by the new run.
+    assert "auto-tagged-florence2" in after.subject
+    assert "auto-tagged-ram" in after.subject
+    # New tags landed.
+    assert "ice" in after.subject
+    assert "cold" in after.subject
+    # User keyword survived the wipe.
+    assert "antarctica" in after.subject
+    # New caption replaced the prior one (--rewrite forces caption_overwrite).
+    assert after.description == "Just ice."
+
+    # DB tags should reflect ONLY the new run.
+    cat = Catalog(photo_root / ".photoindex" / "catalog.db")
+    cat.init_schema()
+    db_tags = {(t.name, t.source) for t in cat.get_tags(_only_sha(cat))}
+    assert db_tags == {("ice", "florence2"), ("cold", "ram++")}
+    cat.close()
+
+
+def _only_sha(cat: Catalog) -> str:
+    """Helper: return the single sha256 in a catalog with one photo."""
+    cur = cat._conn.execute("SELECT sha256 FROM photos")  # noqa: SLF001  (test-only access)
+    return cur.fetchone()["sha256"]
+
+
+@needs_exiftool
 def test_sample_n(tmp_path: Path, make_jpeg):
     photo_root = tmp_path / "photos"
     photo_root.mkdir()

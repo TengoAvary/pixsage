@@ -122,6 +122,27 @@ def test_user_rejected_persists_across_record(tmp_path: Path):
     cat.close()
 
 
+def test_delete_tags_clears_all_tag_state(tmp_path: Path):
+    cat = Catalog(tmp_path / "c.db")
+    cat.init_schema()
+    sha = "2" * 64
+    cat.upsert_photo(sha256=sha, path=tmp_path / "x.jpg", filesize=1, mtime=1.0)
+    cat.record_tags(sha, [
+        Tag("penguin", 1.0, None, "florence2"),
+        Tag("bird", 0.9, None, "ram++"),
+    ])
+    cat.flag_user_rejections(sha, surviving_xmp_tags={"penguin"})  # mark "bird" rejected
+    assert len(cat.get_tags(sha)) == 2
+    assert cat.get_user_rejected(sha) == {("bird", "ram++")}
+
+    cat.delete_tags(sha)
+    assert cat.get_tags(sha) == []
+    assert cat.get_user_rejected(sha) == set()
+    # Photo row itself is preserved
+    assert cat.get_photo(sha) is not None
+    cat.close()
+
+
 def test_runs_table_records_run(tmp_path: Path):
     cat = Catalog(tmp_path / "c.db")
     cat.init_schema()

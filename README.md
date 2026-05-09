@@ -76,13 +76,34 @@ exclude = []
 "penguin" = "Wildlife|Bird|Penguin"
 ```
 
-Re-run with `--force` (and optionally `--sample 50` first) to re-tag with the new vocabulary.
+Re-run with `--force` (and optionally `--sample 50` first) to re-tag with the new vocabulary. **Note:** `--force` *merges* new tags with the existing XMP — it never deletes prior auto-tags. If you've improved the model or want a clean slate, use `--rewrite` (described below).
+
+## When you've improved the code or vocabulary and want a do-over
+
+`--force` re-runs the taggers but merges with whatever XMP is already there. After several iterations you'll accumulate stale tags from old runs.
+
+`--rewrite` is the do-over flag. It:
+
+1. Reads each photo's current XMP.
+2. Looks up which tags pixsage previously applied (from the catalog).
+3. Removes those — and our `auto-tagged-*` source markers — from `dc:subject`. Your manually-added keywords stay.
+4. Wipes the matching catalog rows so `user_rejected` flags reset.
+5. Runs the (now-improved) taggers and writes fresh tags.
+6. Always overwrites `dc:description` if `caption.enabled`.
+
+```bash
+pixsage tag /path/to/photos --rewrite           # full corpus
+pixsage tag /path/to/photos --rewrite --sample 50  # tune on a sample first
+```
+
+`--rewrite` implies `--force`. It does NOT touch raws (sidecar XMPs are written from scratch each run already).
 
 ## Common flags
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--force` | off | Re-tag photos even if already tagged at current model versions |
+| `--force` | off | Re-tag photos even if already tagged at current model versions; merges with existing XMP |
+| `--rewrite` | off | Wipe previously-applied auto-tags before re-tagging. Implies `--force` |
 | `--sample N` | 0 (no sampling) | Tag a deterministic sample of N photos. Good for vocabulary tuning |
 | `--catalog PATH` | `<photo_root>/.photoindex/catalog.db` | Override catalog location |
 | `--config PATH` | `<photo_root>/.photoindex/vocabulary.toml` | Override config location |

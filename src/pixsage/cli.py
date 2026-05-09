@@ -15,7 +15,7 @@ from pixsage.images import load_image
 from pixsage.taggers.base import Tag, Tagger, TagResult
 from pixsage.vocabulary import filter_tags
 from pixsage.walker import sample_paths, sha256_file, walk_photos
-from pixsage.xmp import merge_xmp, needs_sidecar, read_xmp, write_xmp
+from pixsage.xmp import XmpFields, merge_xmp, needs_sidecar, read_xmp, write_xmp
 
 app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
@@ -49,6 +49,15 @@ def _config_hash(config: Config) -> str:
 def tag(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
     force: bool = typer.Option(False, "--force", help="Re-tag photos even if already tagged at current model versions."),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help=(
+            "Wipe previously-applied auto-tags from XMP and the catalog before re-tagging. "
+            "Acts as if pixsage never ran on these photos. User-applied keywords are preserved. "
+            "Implies --force."
+        ),
+    ),
     sample: int = typer.Option(0, "--sample", min=0, help="If >0, tag only N deterministically sampled photos."),
     catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
     config_path: Path | None = typer.Option(None, "--config", help="Override vocabulary.toml path."),
@@ -86,17 +95,29 @@ def tag(
     skipped = 0
     errored = 0
 
+    # --rewrite implies --force: we never want to skip a photo we're about to wipe.
+    effective_force = force or rewrite
+
     for path in tqdm(paths, unit="img"):
         sha = hashes[path]
         stat = path.stat()
         cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
-        if not force and not cat.needs_tagging(sha, model_versions):
+        if not effective_force and not cat.needs_tagging(sha, model_versions):
             skipped += 1
             continue
         if limit and processed >= limit:
             break
         try:
-            _process_one(path=path, sha=sha, is_raw=needs_sidecar(path), taggers=taggers, config=config, cat=cat, dry_run=dry_run)
+            _process_one(
+                path=path,
+                sha=sha,
+                is_raw=needs_sidecar(path),
+                taggers=taggers,
+                config=config,
+                cat=cat,
+                dry_run=dry_run,
+                rewrite=rewrite,
+            )
             processed += 1
         except Exception as e:  # broad: log + continue
             cat.mark_error(sha, str(e))
@@ -116,6 +137,7 @@ def _process_one(
     config: Config,
     cat: Catalog,
     dry_run: bool,
+    rewrite: bool = False,
 ) -> None:
     img = load_image(path)
     raw_tags: list[Tag] = []
@@ -134,6 +156,15 @@ def _process_one(
     sources_with_filtered = {tag.source for tag in filtered}
 
     existing = read_xmp(path, is_raw=is_raw)
+
+    if rewrite:
+        # Strip every auto-tag this photo previously got from us (and our
+        # source markers) before merging. User-applied keywords stay.
+        # Also wipe the DB tag rows so user_rejected resets — the user
+        # asked for a clean slate.
+        existing = _strip_auto_artifacts(existing, cat.get_tags(sha))
+        cat.delete_tags(sha)
+
     cat.flag_user_rejections(sha, surviving_xmp_tags=set(existing.subject))
     user_rejected = cat.get_user_rejected(sha)
 
@@ -142,7 +173,8 @@ def _process_one(
         new_tags=filtered,
         user_rejected=user_rejected,
         caption=caption if config.caption.enabled else None,
-        caption_overwrite=config.caption.overwrite,
+        # --rewrite always replaces the description so config improvements take effect.
+        caption_overwrite=config.caption.overwrite or rewrite,
         sources_with_tags=sources_with_filtered,
     )
 
@@ -157,6 +189,23 @@ def _process_one(
             sha = new_sha
         cat.record_tags(sha, [t for t in filtered if (t.name, t.source) not in user_rejected])
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
+
+
+_KNOWN_MARKERS = frozenset({"auto-tagged-florence2", "auto-tagged-ram"})
+
+
+def _strip_auto_artifacts(existing: XmpFields, prior_tags: list[Tag]) -> XmpFields:
+    """Return XmpFields with previously-applied auto tags + source markers removed."""
+    auto_names = {t.name for t in prior_tags}
+    auto_hierarchies = {t.hierarchy for t in prior_tags if t.hierarchy}
+    return XmpFields(
+        subject=[s for s in existing.subject if s not in auto_names and s not in _KNOWN_MARKERS],
+        hierarchical_subject=[h for h in existing.hierarchical_subject if h not in auto_hierarchies],
+        # Description is overwritten downstream when caption.enabled (we force
+        # caption_overwrite=True for --rewrite). Keep the existing string here
+        # so the merge sees a consistent starting state regardless.
+        description=existing.description,
+    )
 
 
 def _tag_with_retry(tagger: Tagger, image: Image.Image) -> TagResult:
