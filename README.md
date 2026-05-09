@@ -113,6 +113,8 @@ pixsage tag /path/to/photos --rewrite --sample 50  # tune on a sample first
 | `--config PATH` | `<photo_root>/.photoindex/vocabulary.toml` | Override config location |
 | `--limit N` | 0 (no limit) | Stop after N photos processed this run |
 | `--dry-run` | off | Run pipeline but skip XMP writes and catalog tag updates |
+| `--skip-extensions` | (none) | Comma-separated extensions to exclude, e.g. `.jpg,.jpeg`. Useful when raws + JPGs coexist and you only want to tag one |
+| `--only-extensions` | (none) | Only process these extensions, e.g. `.arw,.cr3`. Mutually exclusive with `--skip-extensions` |
 
 ## Demo corpus
 

@@ -45,6 +45,30 @@ def _config_hash(config: Config) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _normalize_exts(spec: str) -> set[str]:
+    """'jpg, .JPG ,heic' -> {'.jpg', '.heic'}. Lowercases, ensures leading dot."""
+    out: set[str] = set()
+    for raw in spec.split(","):
+        e = raw.strip().lower()
+        if not e:
+            continue
+        out.add(e if e.startswith(".") else f".{e}")
+    return out
+
+
+def _apply_extension_filter(
+    paths: list[Path], skip: str | None, only: str | None
+) -> list[Path]:
+    """Filter walk_photos output by --skip-extensions / --only-extensions."""
+    if only:
+        keep = _normalize_exts(only)
+        return [p for p in paths if p.suffix.lower() in keep]
+    if skip:
+        drop = _normalize_exts(skip)
+        return [p for p in paths if p.suffix.lower() not in drop]
+    return paths
+
+
 @app.command()
 def tag(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -63,7 +87,21 @@ def tag(
     config_path: Path | None = typer.Option(None, "--config", help="Override vocabulary.toml path."),
     limit: int = typer.Option(0, "--limit", min=0, help="Stop after this many photos processed."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run pipeline but skip XMP writes and catalog tag updates."),
+    skip_extensions: str | None = typer.Option(
+        None,
+        "--skip-extensions",
+        help="Comma-separated extensions to exclude (e.g. '.jpg,.jpeg'). Mutually exclusive with --only-extensions.",
+    ),
+    only_extensions: str | None = typer.Option(
+        None,
+        "--only-extensions",
+        help="Only process these extensions (e.g. '.arw,.cr3'). Mutually exclusive with --skip-extensions.",
+    ),
 ) -> None:
+    if skip_extensions and only_extensions:
+        typer.echo("--skip-extensions and --only-extensions are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+
     photoindex = photo_root / ".photoindex"
     photoindex.mkdir(exist_ok=True)
     catalog_path = catalog or (photoindex / "catalog.db")
@@ -83,7 +121,12 @@ def tag(
     run_id = cat.start_run(config_hash=_config_hash(config), model_versions=model_versions)
 
     paths = list(walk_photos(photo_root))
-    typer.echo(f"Found {len(paths)} candidate images.")
+    found_total = len(paths)
+    paths = _apply_extension_filter(paths, skip=skip_extensions, only=only_extensions)
+    if len(paths) != found_total:
+        typer.echo(f"Found {found_total} candidate images, {len(paths)} after extension filter.")
+    else:
+        typer.echo(f"Found {found_total} candidate images.")
 
     typer.echo("Hashing files…")
     hashes: dict[Path, str] = {p: sha256_file(p) for p in tqdm(paths, unit="file")}
