@@ -380,5 +380,38 @@ def _resize_to_long_edge(img: Image.Image, target: int) -> Image.Image:
     return _resize_long_edge(img, target)
 
 
+@app.command()
+def serve(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    embedder: str = typer.Option("siglip2", "--embedder", help="Embedder for query encoding."),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8765, "--port"),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open a browser."),
+    catalog: Path | None = typer.Option(None, "--catalog"),
+) -> None:
+    """Run the search webapp on http://host:port."""
+    photoindex = photo_root / ".photoindex"
+    catalog_path = catalog or (photoindex / "catalog.db")
+    if not catalog_path.exists():
+        typer.echo(f"no catalog at {catalog_path}; run `pixsage tag` then `pixsage embed` first", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        import uvicorn
+    except ImportError:
+        typer.echo("FastAPI + uvicorn not installed. Run: pip install -e \".[search]\"", err=True)
+        raise typer.Exit(code=1)
+
+    from pixsage.web.app import build_app
+    fastapi_app = build_app(photo_root=photo_root, embedder_name=embedder)
+
+    if not no_open:
+        import webbrowser, threading
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+
+    typer.echo(f"pixsage serve at http://{host}:{port}/")
+    uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
+
+
 if __name__ == "__main__":
     app()
