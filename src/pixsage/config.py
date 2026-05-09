@@ -22,11 +22,32 @@ class CaptionConfig(BaseModel):
     overwrite: bool = False
 
 
+class SigLIP2Config(BaseModel):
+    enabled: bool = True
+    model: str = "google/siglip2-so400m-patch14-384"
+    image: bool = True
+    caption: bool = True
+    batch_size: int = 16
+
+
+class EmbeddingsConfig(BaseModel):
+    enabled: bool = True
+    siglip2: SigLIP2Config = Field(default_factory=SigLIP2Config)
+
+
+class SearchConfig(BaseModel):
+    default_image_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    top_k: int = 60
+    thumb_size_default: str = "medium"  # "small" | "medium" | "large"
+
+
 class Config(BaseModel):
     florence2: TaggerConfig
     ram_plus_plus: TaggerConfig
     hierarchy_overrides: dict[str, str] = Field(default_factory=dict)
     caption: CaptionConfig = Field(default_factory=CaptionConfig)
+    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
 
 
 DEFAULT_CONFIG_TOML = """\
@@ -58,6 +79,21 @@ exclude = []
 [caption]
 enabled = true
 overwrite = false
+
+[embeddings]
+enabled = true
+
+[embeddings.siglip2]
+enabled = true
+model = "google/siglip2-so400m-patch14-384"
+image = true
+caption = true
+batch_size = 16
+
+[search]
+default_image_weight = 0.5
+top_k = 60
+thumb_size_default = "medium"
 """
 
 
