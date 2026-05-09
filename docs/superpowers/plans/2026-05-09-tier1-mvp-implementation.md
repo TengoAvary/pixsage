@@ -41,6 +41,8 @@
 | `tests/test_taggers_mock.py` | Mock tagger sanity tests |
 | `tests/test_cli.py` | End-to-end CLI tests (mocked taggers) |
 | `tests/conftest.py` | Shared fixtures (synthetic image factory, tmp catalog) |
+| `tests/demo_corpus_urls.txt` | Curated URL list for the demo corpus fetcher |
+| `scripts/fetch_demo_corpus.py` | Downloads ~20 public photos for integration testing |
 | `README.md` | Install, exiftool prereq, usage, smoke test instructions |
 
 The taggers package isolates the heavy dependencies — early tasks don't need to install `torch` or model weights.
@@ -2716,7 +2718,7 @@ pixsage tag /path/to/photos
 ```
 
 Outputs:
-- XMP sidecars next to raws (e.g., `DSC_0001.ARW.xmp`).
+- XMP sidecars next to raws (e.g., `DSC_0001.ARW` → `DSC_0001.xmp`, Lightroom convention).
 - Embedded XMP in JPEG/HEIC/TIFF/DNG.
 - A catalog at `/path/to/photos/.photoindex/catalog.db`.
 - A vocabulary config at `/path/to/photos/.photoindex/vocabulary.toml` (created on first run with sensible defaults).
@@ -2798,7 +2800,172 @@ git commit -m "docs: README with install, usage, vocabulary tuning, smoke test"
 
 ---
 
-## Task 19: Final verification
+## Task 19: Demo corpus + integration runbook
+
+**Files:**
+- Create: `scripts/fetch_demo_corpus.py`
+- Create: `tests/demo_corpus_urls.txt`
+- Modify: `.gitignore`
+- Modify: `README.md`
+
+The photographer's actual photos are the gold-standard integration test, but we don't have them yet. This task gives us a small reproducible public corpus to validate that the pipeline produces sensible output on real images. Tag-quality validation against real photos comes after Phase 1 ships.
+
+We use [Lorem Picsum](https://picsum.photos) — stable IDs map to specific real photos curated from Unsplash. ~20 IDs spaced across the catalog give us varied subjects (landscapes, portraits, urban, animals, food, abstract).
+
+- [ ] **Step 1: Add demo corpus dir to `.gitignore`**
+
+Append to `.gitignore`:
+
+```
+# Demo corpus (downloaded by scripts/fetch_demo_corpus.py)
+tests/demo_corpus/
+```
+
+- [ ] **Step 2: Create `tests/demo_corpus_urls.txt`**
+
+```
+# Curated Lorem Picsum IDs covering varied subjects.
+# Each line: a URL. Lines starting with # and blank lines are ignored.
+# Each photo is downloaded as <id>.jpg into tests/demo_corpus/.
+# Add your own URLs here as needed — any direct-link image URL works.
+https://picsum.photos/id/10/2000/1333
+https://picsum.photos/id/12/2000/1333
+https://picsum.photos/id/20/2000/1333
+https://picsum.photos/id/27/2000/1333
+https://picsum.photos/id/40/2000/1333
+https://picsum.photos/id/65/2000/1333
+https://picsum.photos/id/91/2000/1333
+https://picsum.photos/id/110/2000/1333
+https://picsum.photos/id/128/2000/1333
+https://picsum.photos/id/164/2000/1333
+https://picsum.photos/id/177/2000/1333
+https://picsum.photos/id/200/2000/1333
+https://picsum.photos/id/237/2000/1333
+https://picsum.photos/id/250/2000/1333
+https://picsum.photos/id/293/2000/1333
+https://picsum.photos/id/314/2000/1333
+https://picsum.photos/id/342/2000/1333
+https://picsum.photos/id/433/2000/1333
+https://picsum.photos/id/535/2000/1333
+https://picsum.photos/id/659/2000/1333
+https://picsum.photos/id/823/2000/1333
+https://picsum.photos/id/1000/2000/1333
+```
+
+- [ ] **Step 3: Create `scripts/fetch_demo_corpus.py`**
+
+```python
+"""Download a small public test corpus into tests/demo_corpus/.
+
+Idempotent: skips files already present.
+Each picsum URL is saved as <id>.jpg; other URLs use the trailing path component.
+"""
+from __future__ import annotations
+
+import sys
+import urllib.request
+from pathlib import Path
+from urllib.parse import urlparse
+
+ROOT = Path(__file__).resolve().parent.parent
+CORPUS_DIR = ROOT / "tests" / "demo_corpus"
+URLS_FILE = ROOT / "tests" / "demo_corpus_urls.txt"
+
+
+def target_filename(url: str) -> str:
+    parts = urlparse(url).path.strip("/").split("/")
+    if "id" in parts:  # picsum.photos URLs
+        idx = parts.index("id")
+        if idx + 1 < len(parts):
+            return f"{parts[idx + 1]}.jpg"
+    return parts[-1] or "img.jpg"
+
+
+def main() -> int:
+    if not URLS_FILE.exists():
+        print(f"Missing URL list: {URLS_FILE}", file=sys.stderr)
+        return 1
+    CORPUS_DIR.mkdir(parents=True, exist_ok=True)
+    urls = [
+        line.strip()
+        for line in URLS_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    downloaded = 0
+    skipped = 0
+    failed = 0
+    for url in urls:
+        target = CORPUS_DIR / target_filename(url)
+        if target.exists():
+            skipped += 1
+            continue
+        print(f"Downloading {url} -> {target.name}")
+        try:
+            urllib.request.urlretrieve(url, target)
+            downloaded += 1
+        except Exception as e:  # noqa: BLE001  (any failure is reportable)
+            print(f"  failed: {e}", file=sys.stderr)
+            failed += 1
+    print(f"done. downloaded={downloaded} skipped={skipped} failed={failed} total={len(urls)}")
+    return 0 if failed == 0 else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 4: Add a "Demo corpus" section to `README.md`**
+
+Insert this section between "## Manual smoke test" and "## Tests":
+
+```markdown
+## Demo corpus
+
+When you don't have access to the photographer's photos, fetch a small public corpus to validate the end-to-end pipeline:
+
+\`\`\`bash
+python scripts/fetch_demo_corpus.py
+pixsage tag tests/demo_corpus
+exiftool -XMP-dc:Subject -XMP-dc:Description tests/demo_corpus/*.jpg
+\`\`\`
+
+This downloads ~20 photos from picsum.photos into `tests/demo_corpus/` (gitignored). Use it for "does the pipeline work on real images" testing. For tag-quality validation, point pixsage at the photographer's actual photos.
+
+Add your own URLs to `tests/demo_corpus_urls.txt` to expand the corpus.
+```
+
+(In the actual README, replace `\`\`\`` with triple backticks — the escaping above is just so this plan renders correctly.)
+
+- [ ] **Step 5: Verify the script runs**
+
+```bash
+python scripts/fetch_demo_corpus.py
+ls tests/demo_corpus
+```
+
+Expected: ~22 JPEG files. If picsum.photos is unreachable, the script prints failures but doesn't raise.
+
+- [ ] **Step 6: Run a real end-to-end smoke test**
+
+After Florence-2 + RAM++ are wired (Tasks 15–16):
+
+```bash
+pixsage tag tests/demo_corpus
+exiftool -XMP-dc:Subject -XMP-dc:Description tests/demo_corpus/10.jpg
+```
+
+Expected: tags that plausibly describe the photo content; caption is a sentence; markers `auto-tagged-florence2` and `auto-tagged-ram` present. Inspect a handful of files to gut-check tag quality.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/fetch_demo_corpus.py tests/demo_corpus_urls.txt .gitignore README.md
+git commit -m "feat(test): demo corpus fetcher + integration runbook"
+```
+
+---
+
+## Task 20: Final verification
 
 - [ ] **Step 1: Run the full test suite**
 
@@ -2816,23 +2983,34 @@ ruff check src tests
 
 Expected: no issues. Fix any reported.
 
-- [ ] **Step 3: Manual end-to-end smoke test**
+- [ ] **Step 3: Manual end-to-end smoke test on the demo corpus**
 
-On the GPU box with a small directory of real photos (5–10 mixed raws + JPEGs):
+On the GPU box (assumes `python scripts/fetch_demo_corpus.py` has populated `tests/demo_corpus/`):
 
 ```bash
-pixsage tag /path/to/test_corpus
+pixsage tag tests/demo_corpus
 ```
 
 - Verify the run completes without errors.
-- Verify XMP sidecars exist for raws (`<name>.ARW.xmp`).
-- Verify embedded XMP on JPEGs has expected keywords (use `exiftool -XMP-dc:Subject *.jpg`).
-- Open a JPEG in Lightroom (after Read Metadata from File). Keywords appear in the Keyword List.
-- Re-run `pixsage tag /path/to/test_corpus`. Output reports `processed=0 skipped=N`.
-- Edit `vocabulary.toml`, ban one tag that showed up. Re-run with `--force`. Verify the banned tag is gone.
-- Manually remove an auto-tag from one photo in Lightroom. Save metadata to file. Re-run with `--force`. Verify the removed tag stays removed.
+- Verify embedded XMP on JPEGs has plausible keywords (`exiftool -XMP-dc:Subject -XMP-dc:Description tests/demo_corpus/*.jpg`). Spot-check 3–5 photos for tag quality.
+- Re-run `pixsage tag tests/demo_corpus`. Output reports `processed=0 skipped=N`.
+- Edit a tag from one photo's XMP (`exiftool -XMP-dc:Subject-=<tag> tests/demo_corpus/<id>.jpg`). Re-run with `--force`. Verify that tag stays removed (user-rejection behavior).
+- Edit `vocabulary.toml` in `tests/demo_corpus/.photoindex/`, add an exclusion. Re-run with `--force`. Verify the excluded tag is gone everywhere.
 
-- [ ] **Step 4: Final commit (if any local changes)**
+- [ ] **Step 4: Manual smoke test on real raws (when available)**
+
+When a folder of the photographer's actual photos is accessible (USB drive, network share, etc.) — likely after Phase 1 ships:
+
+```bash
+pixsage tag /path/to/photographer_sample --sample 50
+```
+
+- Verify XMP sidecars exist for raws (e.g., `DSC_0001.ARW` → `DSC_0001.xmp`).
+- Open a raw in Lightroom (after Read Metadata from File). Keywords appear in the Keyword List; hierarchical keywords render as nested.
+- Build a Lightroom smart collection on `auto-tagged-florence2`. Inspect the auto-tagged subset.
+- Sit with the photographer for 15 minutes; ask which tags are wrong, missing, or noise. Use that feedback to iterate `vocabulary.toml`.
+
+- [ ] **Step 5: Final commit (if any local changes)**
 
 ```bash
 git status
@@ -2843,7 +3021,7 @@ git status
 
 ## Summary of what gets built
 
-After all 19 tasks:
+After all 20 tasks:
 
 - A `pixsage tag` CLI installable via `pip install -e ".[taggers]"` (or `[dev]` for tests).
 - 6 components (walker, image loader, taggers, vocabulary filter, XMP writer, catalog) with isolated unit tests.
