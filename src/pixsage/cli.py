@@ -205,6 +205,62 @@ def cleanup(
     )
 
 
+def _build_embedder(name: str):
+    """Construct an embedder by short name. Lazy imports keep the CLI cold path light."""
+    if name == "mock":
+        from pixsage.embedders.mock import MockEmbedder
+        return MockEmbedder()
+    if name == "siglip2":
+        from pixsage.embedders.siglip2 import SigLIP2Embedder
+        return SigLIP2Embedder()
+    raise typer.BadParameter(f"unknown embedder: {name!r} (choose from: mock, siglip2)")
+
+
+@app.command()
+def embed(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    embedder: str = typer.Option(
+        "siglip2", "--embedder",
+        help="Embedder to use. Choices: siglip2, mock (mock is for testing only).",
+    ),
+    force: bool = typer.Option(False, "--force", help="Re-embed photos even if vectors already exist."),
+    catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
+    no_image: bool = typer.Option(False, "--no-image", help="Skip image embedding."),
+    no_caption: bool = typer.Option(False, "--no-caption", help="Skip caption embedding."),
+) -> None:
+    """Compute embeddings for each photo in the catalog."""
+    from pixsage.embed_runner import EmbedRunner
+    from pixsage.vectors import VectorStore
+
+    photoindex = photo_root / ".photoindex"
+    catalog_path = catalog or (photoindex / "catalog.db")
+    if not catalog_path.exists():
+        typer.echo(f"no catalog at {catalog_path}; run `pixsage tag` first", err=True)
+        raise typer.Exit(code=1)
+
+    cat = Catalog(catalog_path)
+    cat.init_schema()  # picks up the caption migration if it's an older catalog
+
+    enc = _build_embedder(embedder)
+    typer.echo(f"Loading embedder: {enc.info.name}")
+    enc.load(select_device())
+
+    vectors = VectorStore(photoindex / "vectors")
+
+    embed_runner = EmbedRunner(
+        catalog=cat,
+        vectors=vectors,
+        embedder=enc,
+        force=force,
+        embed_image=not no_image,
+        embed_caption=not no_caption,
+        progress=True,
+    )
+    stats = embed_runner.run()
+    cat.close()
+    typer.echo(f"done. processed={stats['processed']} skipped={stats['skipped']} errored={stats['errored']}")
+
+
 def _process_one(
     path: Path,
     sha: str,
