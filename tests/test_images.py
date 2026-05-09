@@ -39,3 +39,14 @@ def test_load_image_unknown_extension_raises(tmp_path: Path):
     p.write_bytes(b"not an image")
     with pytest.raises(ValueError):
         load_image(p)
+
+
+RAW_FIXTURE = Path(__file__).parent / "fixtures" / "images" / "sample.arw"
+
+
+@pytest.mark.skipif(not RAW_FIXTURE.exists(), reason="raw fixture not present")
+def test_load_raw_returns_rgb():
+    img = load_image(RAW_FIXTURE)
+    assert isinstance(img, Image.Image)
+    assert img.mode == "RGB"
+    assert max(img.size) <= LONG_EDGE_TARGET

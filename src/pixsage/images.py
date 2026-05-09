@@ -34,8 +34,19 @@ def load_image(path: Path) -> Image.Image:
 
 
 def _load_raw(path: Path) -> Image.Image:
-    # Implemented in Task 7.
-    raise NotImplementedError("Raw loading not yet implemented")
+    import rawpy
+    with rawpy.imread(str(path)) as raw:
+        try:
+            thumb = raw.extract_thumb()
+        except rawpy.LibRawNoThumbnailError:
+            # fall back: develop the raw (slow, but ensures we can always load something)
+            rgb = raw.postprocess(no_auto_bright=True, output_bps=8)
+            return Image.fromarray(rgb, mode="RGB")
+    if thumb.format == rawpy.ThumbFormat.JPEG:
+        from io import BytesIO
+        return Image.open(BytesIO(thumb.data))
+    # rawpy.ThumbFormat.BITMAP
+    return Image.fromarray(thumb.data, mode="RGB")
 
 
 def _resize_long_edge(img: Image.Image, target: int) -> Image.Image:
