@@ -179,7 +179,16 @@ def cleanup(
     thumbs: bool = typer.Option(False, "--thumbs", help="Also delete the thumbnail cache."),
     vectors: bool = typer.Option(False, "--vectors", help="Also delete all vector parquet files."),
 ) -> None:
-    """Drop stale catalog rows. With flags, also clear caches."""
+    """Drop stale catalog rows left behind by errored writes.
+
+    Each photo file should have exactly one row in the catalog (keyed by
+    sha256). When a prior run errored after write_xmp succeeded but before
+    rekey_photo committed, the catalog accumulates an extra row per photo.
+    This command keeps the most-recently-seen row for each path and drops
+    the rest. Tag rows for the dropped photos cascade-delete automatically.
+
+    With --thumbs / --vectors, also wipes the corresponding Phase 3 caches.
+    """
     import shutil
 
     photoindex = photo_root / ".photoindex"
