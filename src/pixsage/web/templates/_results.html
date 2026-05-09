@@ -1,0 +1,10 @@
+{% if hits %}
+<div class="results-meta">{{ hits|length }} results for "{{ query }}"</div>
+<div class="grid">
+  {% for hit in hits %}
+    {% include "_card.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="results-meta">No results.</div>
+{% endif %}

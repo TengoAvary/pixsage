@@ -35,8 +35,9 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
 
     # Lazy import to keep `pixsage embed` callable on systems without [search] installed.
     from pixsage.cli import _build_embedder
+    from pixsage.device import select_device
     embedder = _build_embedder(embedder_name)
-    # Defer the actual model load to a serve-time hook (Task 18); for now leave it.
+    embedder.load(select_device())
 
     vectors = VectorStore(photoindex / "vectors")
     search_service = SearchService(
@@ -45,6 +46,7 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
         image_kind=embedder.info.image_kind,
         text_kind=embedder.info.text_kind,
     )
+    search_service.load()
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 

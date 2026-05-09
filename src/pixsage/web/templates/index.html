@@ -11,7 +11,8 @@
     <h1>pixsage</h1>
   </header>
   <main>
-    <form id="search-form">
+    <form id="search-form"
+          hx-post="/search" hx-target="#results" hx-swap="innerHTML">
       <input type="search" name="q" placeholder="Describe what you want to find…" autofocus />
       <label>
         Visual ⇄ Caption
