@@ -8,6 +8,11 @@ from pydantic import BaseModel, Field, ValidationError
 
 class TaggerConfig(BaseModel):
     enabled: bool = True
+    # When `enabled = true` and `tags_enabled = false`, the tagger still runs —
+    # any caption it produces still flows through to dc:description — but its
+    # tags are dropped before merge. Lets you, e.g., keep Florence-2's caption
+    # while using only RAM++ as a tag source.
+    tags_enabled: bool = True
     confidence_threshold: float = Field(ge=0.0, le=1.0)
     exclude: list[str] = Field(default_factory=list)
 
@@ -29,11 +34,13 @@ DEFAULT_CONFIG_TOML = """\
 
 [florence2]
 enabled = true
+tags_enabled = true   # set false to use Florence-2 only for captions
 confidence_threshold = 0.5
 exclude = ["photograph", "image", "picture"]
 
 [ram_plus_plus]
 enabled = true
+tags_enabled = true
 confidence_threshold = 0.4
 exclude = []
 

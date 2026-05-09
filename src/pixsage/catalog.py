@@ -205,6 +205,32 @@ class Catalog:
                 (new_sha256, old_sha256),
             )
 
+    def cleanup_orphans(self) -> int:
+        """Remove stale photo rows.
+
+        For each (current_path) that has multiple sha256 rows (which happens
+        when a previous run errored mid-write and left an old-sha row behind),
+        keep only the row with the most recent last_seen_at. CASCADE deletes
+        the orphan tags rows automatically.
+
+        Returns the number of photo rows deleted.
+        """
+        with self._conn:
+            self._conn.execute("PRAGMA foreign_keys = ON")
+            cur = self._conn.execute(
+                """
+                DELETE FROM photos
+                WHERE rowid NOT IN (
+                    SELECT rowid FROM photos p1
+                    WHERE last_seen_at = (
+                        SELECT MAX(last_seen_at) FROM photos p2
+                        WHERE p2.current_path = p1.current_path
+                    )
+                )
+                """
+            )
+            return int(cur.rowcount or 0)
+
     def start_run(self, config_hash: str, model_versions: dict[str, str]) -> int:
         with self._conn:
             cur = self._conn.execute(

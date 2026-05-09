@@ -129,6 +129,39 @@ def tag(
     typer.echo(f"done. processed={processed} skipped={skipped} errored={errored}")
 
 
+@app.command()
+def cleanup(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
+) -> None:
+    """Drop stale catalog rows left behind by errored writes.
+
+    Each photo file should have exactly one row in the catalog (keyed by
+    sha256). When a prior run errored after write_xmp succeeded but before
+    rekey_photo committed, the catalog accumulates an extra row per photo.
+    This command keeps the most-recently-seen row for each path and drops
+    the rest. Tag rows for the dropped photos cascade-delete automatically.
+    """
+    photoindex = photo_root / ".photoindex"
+    catalog_path = catalog or (photoindex / "catalog.db")
+    if not catalog_path.exists():
+        typer.echo(f"no catalog at {catalog_path}", err=True)
+        raise typer.Exit(code=1)
+
+    cat = Catalog(catalog_path)
+    cat.init_schema()
+    before_photos = cat._conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]  # noqa: SLF001
+    before_tags = cat._conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]  # noqa: SLF001
+    deleted = cat.cleanup_orphans()
+    after_photos = cat._conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]  # noqa: SLF001
+    after_tags = cat._conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]  # noqa: SLF001
+    cat.close()
+    typer.echo(
+        f"removed {deleted} orphan photo rows. "
+        f"photos: {before_photos} -> {after_photos}, tags: {before_tags} -> {after_tags}"
+    )
+
+
 def _process_one(
     path: Path,
     sha: str,

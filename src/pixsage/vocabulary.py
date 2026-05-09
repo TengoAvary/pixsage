@@ -9,7 +9,7 @@ def filter_tags(tags: list[Tag], config: Config) -> list[Tag]:
     overrides = {k.lower(): v for k, v in config.hierarchy_overrides.items()}
     for tag in tags:
         cfg = _config_for_source(tag.source, config)
-        if cfg is None or not cfg.enabled:
+        if cfg is None or not cfg.enabled or not cfg.tags_enabled:
             continue
         if tag.confidence < cfg.confidence_threshold:
             continue
