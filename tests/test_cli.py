@@ -354,3 +354,46 @@ def test_tag_records_caption_in_catalog(tmp_path: Path, monkeypatch):
     assert rows[0]["caption"] == "a red rectangle"
     assert rows[0]["caption_updated_at"] is not None
     cat.close()
+
+
+def test_cleanup_thumbs_removes_thumb_dir(tmp_path: Path):
+    from typer.testing import CliRunner
+    from pixsage.cli import app
+
+    photo_root = tmp_path / "photos"
+    photo_root.mkdir()
+    photoindex = photo_root / ".photoindex"
+    photoindex.mkdir()
+    # Pre-existing catalog so cleanup doesn't bail early.
+    from pixsage.catalog import Catalog
+    Catalog(photoindex / "catalog.db").init_schema()
+
+    thumbs_dir = photoindex / "thumbs"
+    thumbs_dir.mkdir()
+    (thumbs_dir / "junk.jpg").write_bytes(b"x")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["cleanup", str(photo_root), "--thumbs"])
+    assert result.exit_code == 0
+    assert not thumbs_dir.exists()
+
+
+def test_cleanup_vectors_removes_vectors_dir(tmp_path: Path):
+    from typer.testing import CliRunner
+    from pixsage.cli import app
+
+    photo_root = tmp_path / "photos"
+    photo_root.mkdir()
+    photoindex = photo_root / ".photoindex"
+    photoindex.mkdir()
+    from pixsage.catalog import Catalog
+    Catalog(photoindex / "catalog.db").init_schema()
+
+    vectors_dir = photoindex / "vectors"
+    vectors_dir.mkdir()
+    (vectors_dir / "siglip2_image.parquet").write_bytes(b"x")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["cleanup", str(photo_root), "--vectors"])
+    assert result.exit_code == 0
+    assert not vectors_dir.exists()

@@ -176,15 +176,12 @@ def tag(
 def cleanup(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
     catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
+    thumbs: bool = typer.Option(False, "--thumbs", help="Also delete the thumbnail cache."),
+    vectors: bool = typer.Option(False, "--vectors", help="Also delete all vector parquet files."),
 ) -> None:
-    """Drop stale catalog rows left behind by errored writes.
+    """Drop stale catalog rows. With flags, also clear caches."""
+    import shutil
 
-    Each photo file should have exactly one row in the catalog (keyed by
-    sha256). When a prior run errored after write_xmp succeeded but before
-    rekey_photo committed, the catalog accumulates an extra row per photo.
-    This command keeps the most-recently-seen row for each path and drops
-    the rest. Tag rows for the dropped photos cascade-delete automatically.
-    """
     photoindex = photo_root / ".photoindex"
     catalog_path = catalog or (photoindex / "catalog.db")
     if not catalog_path.exists():
@@ -203,6 +200,18 @@ def cleanup(
         f"removed {deleted} orphan photo rows. "
         f"photos: {before_photos} -> {after_photos}, tags: {before_tags} -> {after_tags}"
     )
+
+    if thumbs:
+        thumbs_dir = photoindex / "thumbs"
+        if thumbs_dir.exists():
+            shutil.rmtree(thumbs_dir)
+            typer.echo(f"removed thumbnail cache at {thumbs_dir}")
+
+    if vectors:
+        vectors_dir = photoindex / "vectors"
+        if vectors_dir.exists():
+            shutil.rmtree(vectors_dir)
+            typer.echo(f"removed vector store at {vectors_dir}")
 
 
 def _build_embedder(name: str):
