@@ -15,7 +15,7 @@ from pixsage.images import load_image
 from pixsage.taggers.base import Tag, Tagger, TagResult
 from pixsage.vocabulary import filter_tags
 from pixsage.walker import sample_paths, sha256_file, walk_photos
-from pixsage.xmp import merge_xmp, read_xmp, write_xmp
+from pixsage.xmp import merge_xmp, needs_sidecar, read_xmp, write_xmp
 
 app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
@@ -38,11 +38,6 @@ def build_taggers(config: Config) -> list[Tagger]:
 def _config_hash(config: Config) -> str:
     payload = json.dumps(config.model_dump(), sort_keys=True).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
-
-
-def _is_raw(path: Path) -> bool:
-    from pixsage.images import RAW_EXTENSIONS
-    return path.suffix.lower() in RAW_EXTENSIONS
 
 
 @app.command()
@@ -96,7 +91,7 @@ def tag(
         if limit and processed >= limit:
             break
         try:
-            _process_one(path=path, sha=sha, is_raw=_is_raw(path), taggers=taggers, config=config, cat=cat, dry_run=dry_run)
+            _process_one(path=path, sha=sha, is_raw=needs_sidecar(path), taggers=taggers, config=config, cat=cat, dry_run=dry_run)
             processed += 1
         except Exception as e:  # broad: log + continue
             cat.mark_error(sha, str(e))

@@ -65,6 +65,15 @@ from pathlib import Path  # noqa: E402
 
 EXIFTOOL = shutil.which("exiftool") or "exiftool"
 
+SIDECAR_EXTENSIONS: frozenset[str] = frozenset({
+    ".arw", ".cr2", ".cr3", ".nef", ".raf", ".orf", ".rw2",  # NOT .dng — DNG uses embedded XMP
+})
+
+
+def needs_sidecar(path: Path) -> bool:
+    """Return True if this file should use an XMP sidecar (not embedded XMP)."""
+    return path.suffix.lower() in SIDECAR_EXTENSIONS
+
 
 def _sidecar_path(raw_path: Path) -> Path:
     """Lightroom sidecar convention: DSC_0001.ARW -> DSC_0001.xmp."""
