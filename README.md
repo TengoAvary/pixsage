@@ -143,6 +143,27 @@ exiftool -XMP-dc:Subject -XMP-dc:Description /tmp/pixsage_smoke/*.jpg
 
 You should see keywords matching the contents of the photo, plus `auto-tagged-florence2` (and `auto-tagged-ram` if RAM++ loaded successfully) in `Subject`, and a generated caption in `Description`.
 
+## Phase 3: Semantic search
+
+After tagging, compute embeddings and run the local search webapp:
+
+```bash
+pixsage embed /path/to/photos
+pixsage serve /path/to/photos
+```
+
+Open http://127.0.0.1:8765/. Type a query, drag the slider to bias toward
+visual or caption matching, click any photo for "more like this".
+
+Embed runtime estimate: ~14-21 hours for 50k photos on an RTX 4090. The
+`embed` step is interruptible — re-run it to resume. Add `--limit N` for a
+quick test on a subset.
+
+Install with the search extras:
+```bash
+pip install -e ".[taggers,search]"
+```
+
 ## Tests
 
 ```bash
