@@ -84,7 +84,7 @@ def read_xmp(path: Path, is_raw: bool) -> XmpFields:
         str(target),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"exiftool read failed: {e.stderr}") from e
     data = json.loads(result.stdout) if result.stdout.strip() else [{}]
@@ -133,6 +133,6 @@ def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
     else:
         args.append(str(path))
     try:
-        subprocess.run(args, capture_output=True, text=True, check=True)
+        subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"exiftool write failed: {e.stderr}") from e
