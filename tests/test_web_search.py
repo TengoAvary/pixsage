@@ -113,3 +113,26 @@ def test_photo_detail_404(tmp_path: Path):
     with TestClient(app) as client:
         r = client.get("/photo/nonexistent-sha")
         assert r.status_code == 404
+
+
+def test_similar_returns_results_partial_excluding_self(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/similar/sha-a")
+        assert r.status_code == 200
+        # sha-a should NOT appear; sha-b should
+        assert "sha-b" in r.text
+        assert "sha-a" not in r.text or r.text.count("sha-a") == 0
+
+
+def test_similar_404_when_photo_missing(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/similar/nonexistent")
+        assert r.status_code == 404

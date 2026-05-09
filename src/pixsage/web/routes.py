@@ -97,3 +97,34 @@ def register(app: FastAPI) -> None:
                 "tags": [t.name for t in tags],
             },
         )
+
+    @app.get("/similar/{sha256}", response_class=HTMLResponse)
+    def similar(request: Request, sha256: str) -> HTMLResponse:
+        catalog = app.state.catalog
+        config = app.state.config
+        templates = app.state.templates
+        service = app.state.search
+
+        if catalog.get_photo(sha256) is None:
+            raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
+
+        raw_hits = service.search_by_image(sha256, top_k=config.search.top_k)
+        hits = []
+        for h in raw_hits:
+            # Exclude the query photo itself
+            if h.sha256 == sha256:
+                continue
+            row = catalog.get_photo(h.sha256)
+            if row is None:
+                continue
+            hits.append({
+                "sha256": h.sha256,
+                "score": h.score,
+                "filename": Path(row["current_path"]).name,
+            })
+
+        return templates.TemplateResponse(
+            request,
+            "_results.html",
+            {"hits": hits, "query": "similar images"},
+        )
