@@ -53,3 +53,26 @@ def test_record_caption_nonexistent_sha_is_silent(catalog: Catalog):
     # update zero rows (UPDATE semantics), not raise.
     catalog.record_caption("nonexistent-sha", "text")
     assert catalog.get_photo("nonexistent-sha") is None
+
+
+def test_iter_photos_for_embedding_returns_all(catalog: Catalog, tmp_path: Path):
+    catalog.upsert_photo("sha1", tmp_path / "a.jpg", filesize=10, mtime=1.0)
+    catalog.upsert_photo("sha2", tmp_path / "b.jpg", filesize=20, mtime=2.0)
+    catalog.record_caption("sha1", "caption a")
+    # sha2 has no caption
+
+    rows = list(catalog.iter_photos_for_embedding())
+    assert len(rows) == 2
+    by_sha = {r["sha256"]: r for r in rows}
+    assert by_sha["sha1"]["caption"] == "caption a"
+    assert by_sha["sha2"]["caption"] is None
+    assert by_sha["sha1"]["current_path"] == str(tmp_path / "a.jpg")
+
+
+def test_iter_photos_for_embedding_skips_errored(catalog: Catalog, tmp_path: Path):
+    catalog.upsert_photo("sha1", tmp_path / "a.jpg", filesize=10, mtime=1.0)
+    catalog.upsert_photo("sha2", tmp_path / "b.jpg", filesize=20, mtime=2.0)
+    catalog.mark_error("sha2", "decode failed")
+
+    rows = list(catalog.iter_photos_for_embedding())
+    assert {r["sha256"] for r in rows} == {"sha1"}

@@ -4,7 +4,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from pixsage.taggers.base import Tag
@@ -127,6 +127,20 @@ class Catalog:
                 "UPDATE photos SET caption = ?, caption_updated_at = ? WHERE sha256 = ?",
                 (caption, _now(), sha256),
             )
+
+    def iter_photos_for_embedding(self) -> Iterator[dict[str, Any]]:
+        """Yield rows {sha256, current_path, caption, caption_updated_at} for every
+        photo that's not currently flagged with an error.
+        """
+        cur = self._conn.execute(
+            """
+            SELECT sha256, current_path, caption, caption_updated_at
+            FROM photos
+            WHERE error_reason IS NULL
+            """
+        )
+        for row in cur:
+            yield dict(row)
 
     def needs_tagging(self, sha256: str, model_versions: dict[str, str]) -> bool:
         row = self.get_photo(sha256)
