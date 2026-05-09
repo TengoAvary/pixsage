@@ -22,7 +22,7 @@ taggers = [
   "torch>=2.2",
   "transformers>=4.40",
   "rawpy>=0.21",
-  "recognize-anything @ git+https://github.com/xinyu1205/recognize-anything.git",
+  "ram @ git+https://github.com/xinyu1205/recognize-anything.git",
 ]
 dev = [
   "pytest>=8.0",
