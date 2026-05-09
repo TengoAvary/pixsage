@@ -62,8 +62,9 @@ def test_tag_writes_xmp_and_catalog(tmp_path: Path, make_jpeg):
     fields = read_xmp(photo_root / "a.jpg", is_raw=False)
     assert "penguin" in fields.subject
     assert "bird" in fields.subject
-    assert "auto-tagged-florence2" in fields.subject
-    assert "auto-tagged-ram" in fields.subject
+    # Source markers are not emitted (intentionally — they appeared on every
+    # photo and were pure noise). Catalog DB still records source per tag.
+    assert all(not s.startswith("auto-tagged-") for s in fields.subject)
     assert fields.description == "A penguin."
 
     db = photo_root / ".photoindex" / "catalog.db"
@@ -188,9 +189,8 @@ def test_rewrite_strips_prior_auto_tags_keeps_user_keywords(tmp_path: Path, make
     # Old auto tags are gone.
     assert "penguin" not in after.subject
     assert "bird" not in after.subject
-    # Markers re-emitted by the new run.
-    assert "auto-tagged-florence2" in after.subject
-    assert "auto-tagged-ram" in after.subject
+    # No source markers should be emitted (we removed them — they were noise).
+    assert all(not s.startswith("auto-tagged-") for s in after.subject)
     # New tags landed.
     assert "ice" in after.subject
     assert "cold" in after.subject

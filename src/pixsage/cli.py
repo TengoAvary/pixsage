@@ -218,28 +218,29 @@ def _process_one(
     img = load_image(path)
     raw_tags: list[Tag] = []
     caption: str | None = None
-    sources_with_tags: set[str] = set()
 
     for t in taggers:
         result = _tag_with_retry(t, img)
         raw_tags.extend(result.tags)
-        if result.tags:
-            sources_with_tags.add(t.name)
         if caption is None and result.caption:
             caption = result.caption
 
     filtered = filter_tags(raw_tags, config)
-    sources_with_filtered = {tag.source for tag in filtered}
 
     existing = read_xmp(path, is_raw=is_raw)
 
     if rewrite:
-        # Strip every auto-tag this photo previously got from us (and our
-        # source markers) before merging. User-applied keywords stay.
-        # Also wipe the DB tag rows so user_rejected resets — the user
-        # asked for a clean slate.
+        # Strip every auto-tag this photo previously got from us (and any
+        # legacy source markers from older builds) before merging. User-applied
+        # keywords stay. Also wipe the DB tag rows so user_rejected resets —
+        # the user asked for a clean slate.
         existing = _strip_auto_artifacts(existing, cat.get_tags(sha))
         cat.delete_tags(sha)
+    else:
+        # Strip legacy source markers ("auto-tagged-florence2" / "auto-tagged-ram")
+        # written by an older pixsage version so they fade out of XMP on the
+        # next ordinary --force run. Doesn't touch user-applied keywords.
+        existing = _strip_legacy_markers(existing)
 
     cat.flag_user_rejections(sha, surviving_xmp_tags=set(existing.subject))
     user_rejected = cat.get_user_rejected(sha)
@@ -251,7 +252,6 @@ def _process_one(
         caption=caption if config.caption.enabled else None,
         # --rewrite always replaces the description so config improvements take effect.
         caption_overwrite=config.caption.overwrite or rewrite,
-        sources_with_tags=sources_with_filtered,
     )
 
     if not dry_run:
@@ -267,15 +267,31 @@ def _process_one(
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
 
 
-_KNOWN_MARKERS = frozenset({"auto-tagged-florence2", "auto-tagged-ram"})
+def _is_legacy_marker(s: str) -> bool:
+    """Detect markers ('auto-tagged-florence2', 'auto-tagged-ram') from older builds."""
+    from pixsage.xmp import LEGACY_MARKER_PREFIX
+    return s.startswith(LEGACY_MARKER_PREFIX)
+
+
+def _strip_legacy_markers(existing: XmpFields) -> XmpFields:
+    """Drop legacy source markers from existing XMP. Used on every run so XMP
+    written by older pixsage versions sheds them naturally."""
+    return XmpFields(
+        subject=[s for s in existing.subject if not _is_legacy_marker(s)],
+        hierarchical_subject=existing.hierarchical_subject,
+        description=existing.description,
+    )
 
 
 def _strip_auto_artifacts(existing: XmpFields, prior_tags: list[Tag]) -> XmpFields:
-    """Return XmpFields with previously-applied auto tags + source markers removed."""
+    """Return XmpFields with previously-applied auto tags + legacy markers removed."""
     auto_names = {t.name for t in prior_tags}
     auto_hierarchies = {t.hierarchy for t in prior_tags if t.hierarchy}
     return XmpFields(
-        subject=[s for s in existing.subject if s not in auto_names and s not in _KNOWN_MARKERS],
+        subject=[
+            s for s in existing.subject
+            if s not in auto_names and not _is_legacy_marker(s)
+        ],
         hierarchical_subject=[h for h in existing.hierarchical_subject if h not in auto_hierarchies],
         # Description is overwritten downstream when caption.enabled (we force
         # caption_overwrite=True for --rewrite). Keep the existing string here

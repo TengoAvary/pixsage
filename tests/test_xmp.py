@@ -15,11 +15,9 @@ def test_merge_adds_new_auto_tags():
         user_rejected=set(),
         caption="A penguin.",
         caption_overwrite=False,
-        sources_with_tags={"florence2"},
     )
     assert "penguin" in merged.subject
     assert "antarctica" in merged.subject
-    assert "auto-tagged-florence2" in merged.subject
     assert "Wildlife|Bird|Penguin" in merged.hierarchical_subject
     assert merged.description == "A penguin."
 
@@ -32,7 +30,6 @@ def test_merge_preserves_user_keywords():
         user_rejected=set(),
         caption=None,
         caption_overwrite=False,
-        sources_with_tags={"florence2"},
     )
     assert "my keyword" in merged.subject
     assert "another" in merged.subject
@@ -50,7 +47,6 @@ def test_merge_skips_user_rejected_tags():
         user_rejected={("ice", "florence2")},
         caption=None,
         caption_overwrite=False,
-        sources_with_tags={"florence2"},
     )
     assert "penguin" in merged.subject
     assert "ice" not in merged.subject
@@ -64,7 +60,6 @@ def test_merge_does_not_overwrite_existing_description():
         user_rejected=set(),
         caption="Auto caption",
         caption_overwrite=False,
-        sources_with_tags={"florence2"},
     )
     assert merged.description == "Photographer's caption"
 
@@ -77,12 +72,14 @@ def test_merge_overwrites_when_configured():
         user_rejected=set(),
         caption="new",
         caption_overwrite=True,
-        sources_with_tags=set(),
     )
     assert merged.description == "new"
 
 
-def test_merge_marker_tags_per_source():
+def test_merge_does_not_emit_source_markers():
+    """Markers (auto-tagged-florence2, auto-tagged-ram) are no longer added
+    on merge — they appeared on every photo and were pure noise. The catalog
+    DB still records source per tag for anyone who wants to query that."""
     existing = XmpFields(subject=[], hierarchical_subject=[], description=None)
     merged = merge_xmp(
         existing=existing,
@@ -93,23 +90,9 @@ def test_merge_marker_tags_per_source():
         user_rejected=set(),
         caption=None,
         caption_overwrite=False,
-        sources_with_tags={"florence2", "ram++"},
     )
-    assert "auto-tagged-florence2" in merged.subject
-    assert "auto-tagged-ram" in merged.subject
-
-
-def test_merge_no_marker_tag_when_source_has_no_new_tags():
-    existing = XmpFields(subject=[], hierarchical_subject=[], description=None)
-    merged = merge_xmp(
-        existing=existing,
-        new_tags=[Tag("penguin", 1.0, None, "florence2")],
-        user_rejected=set(),
-        caption=None,
-        caption_overwrite=False,
-        sources_with_tags={"florence2"},
-    )
-    assert "auto-tagged-ram" not in merged.subject
+    assert all(not s.startswith("auto-tagged-") for s in merged.subject)
+    assert {"penguin", "bird"} == set(merged.subject)
 
 
 import shutil  # noqa: E402
