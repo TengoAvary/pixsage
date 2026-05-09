@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import typer
+from PIL import Image
 from tqdm import tqdm
 
 from pixsage.catalog import Catalog
@@ -117,12 +118,12 @@ def _process_one(
     dry_run: bool,
 ) -> None:
     img = load_image(path)
-
     raw_tags: list[Tag] = []
     caption: str | None = None
     sources_with_tags: set[str] = set()
+
     for t in taggers:
-        result: TagResult = t.tag(img)
+        result = _tag_with_retry(t, img)
         raw_tags.extend(result.tags)
         if result.tags:
             sources_with_tags.add(t.name)
@@ -130,7 +131,7 @@ def _process_one(
             caption = result.caption
 
     filtered = filter_tags(raw_tags, config)
-    sources_with_filtered = {t.source for t in filtered}
+    sources_with_filtered = {tag.source for tag in filtered}
 
     existing = read_xmp(path, is_raw=is_raw)
     cat.flag_user_rejections(sha, surviving_xmp_tags=set(existing.subject))
@@ -150,6 +151,28 @@ def _process_one(
         write_xmp(path, merged, is_raw=is_raw)
         cat.record_tags(sha, [t for t in filtered if (t.name, t.source) not in user_rejected])
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
+
+
+def _tag_with_retry(tagger: Tagger, image: Image.Image) -> TagResult:
+    """Try the tagger; on OOM-like failure, retry at 768 then 512 px long edge."""
+    sizes = [None, 768, 512]
+    last_err: Exception | None = None
+    for fallback in sizes:
+        try:
+            target = image if fallback is None else _resize_to_long_edge(image, fallback)
+            return tagger.tag(target)
+        except Exception as e:
+            msg = str(e).lower()
+            if "out of memory" in msg or "oom" in msg:
+                last_err = e
+                continue
+            raise
+    raise last_err if last_err else RuntimeError("tagger failed without exception")
+
+
+def _resize_to_long_edge(img: Image.Image, target: int) -> Image.Image:
+    from pixsage.images import _resize_long_edge
+    return _resize_long_edge(img, target)
 
 
 if __name__ == "__main__":
