@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pixsage.taggers.base import Tag, TagResult
+from pixsage.taggers.base import Tag
 from pixsage.xmp import XmpFields, merge_xmp
 
 
@@ -119,12 +119,12 @@ def test_merge_no_marker_tag_when_source_has_no_new_tags():
     assert "auto-tagged-ram" not in merged.subject
 
 
-import shutil
-from pathlib import Path
+import shutil  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
-from pixsage.xmp import read_xmp, write_xmp
+from pixsage.xmp import read_xmp, write_xmp  # noqa: E402
 
 EXIFTOOL = shutil.which("exiftool")
 needs_exiftool = pytest.mark.skipif(EXIFTOOL is None, reason="exiftool not on PATH")

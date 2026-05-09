@@ -4,7 +4,10 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pixsage.taggers.base import Tag
 
 SCHEMA_PHOTOS = """
 CREATE TABLE IF NOT EXISTS photos (
@@ -119,8 +122,7 @@ class Catalog:
         existing = json.loads(row["model_versions"])
         return existing != model_versions
 
-    def record_tags(self, sha256: str, tags: list["Tag"]) -> None:
-        from pixsage.taggers.base import Tag  # local import to keep catalog import-light
+    def record_tags(self, sha256: str, tags: list[Tag]) -> None:
         now = _now()
         with self._conn:
             for t in tags:
@@ -136,13 +138,13 @@ class Catalog:
                     (sha256, t.name, t.source, t.confidence, t.hierarchy, now),
                 )
 
-    def get_tags(self, sha256: str) -> list["Tag"]:
-        from pixsage.taggers.base import Tag
+    def get_tags(self, sha256: str) -> list[Tag]:
+        from pixsage.taggers.base import Tag as _Tag  # noqa: PLC0415 — runtime construction
         cur = self._conn.execute(
             "SELECT tag, confidence, hierarchy, source FROM tags WHERE sha256 = ?",
             (sha256,),
         )
-        return [Tag(name=r["tag"], confidence=r["confidence"] or 0.0, hierarchy=r["hierarchy"], source=r["source"]) for r in cur]
+        return [_Tag(name=r["tag"], confidence=r["confidence"] or 0.0, hierarchy=r["hierarchy"], source=r["source"]) for r in cur]
 
     def get_previously_applied(self, sha256: str) -> set[tuple[str, str]]:
         cur = self._conn.execute(

@@ -58,10 +58,10 @@ def merge_xmp(
     return XmpFields(subject=subject_set, hierarchical_subject=hier, description=description)
 
 
-import json
-import shutil
-import subprocess
-from pathlib import Path
+import json  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 EXIFTOOL = shutil.which("exiftool") or "exiftool"
 

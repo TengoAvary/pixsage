@@ -15,7 +15,7 @@ from pixsage.images import load_image
 from pixsage.taggers.base import Tag, Tagger, TagResult
 from pixsage.vocabulary import filter_tags
 from pixsage.walker import sample_paths, sha256_file, walk_photos
-from pixsage.xmp import XmpFields, merge_xmp, read_xmp, write_xmp
+from pixsage.xmp import merge_xmp, read_xmp, write_xmp
 
 app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
