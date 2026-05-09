@@ -76,3 +76,11 @@ def test_iter_photos_for_embedding_skips_errored(catalog: Catalog, tmp_path: Pat
 
     rows = list(catalog.iter_photos_for_embedding())
     assert {r["sha256"] for r in rows} == {"sha1"}
+
+
+def test_clear_error_resets_error_reason(catalog: Catalog, tmp_path: Path):
+    catalog.upsert_photo("sha1", tmp_path / "a.jpg", filesize=10, mtime=1.0)
+    catalog.mark_error("sha1", "boom")
+    assert catalog.get_photo("sha1")["error_reason"] == "boom"
+    catalog.clear_error("sha1")
+    assert catalog.get_photo("sha1")["error_reason"] is None

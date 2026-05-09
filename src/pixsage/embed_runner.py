@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -43,7 +44,7 @@ class EmbedRunner:
         info = self.embedder.info
         stats = {"processed": 0, "skipped": 0, "errored": 0}
 
-        rows = list(self.catalog.iter_photos_for_embedding())
+        rows = list(self.catalog.iter_photos_for_embedding(include_errored=self.force))
         if self.progress:
             from tqdm import tqdm
             iterator = tqdm(rows, unit="photo")
@@ -92,10 +93,17 @@ class EmbedRunner:
                     txt_vec = self.embedder.embed_text([caption])[0]
                     self.vectors.append(info.text_kind, [(sha, txt_vec)])
 
+                self.catalog.clear_error(sha)
                 stats["processed"] += 1
             except Exception as e:
                 self.catalog.mark_error(sha, str(e))
                 stats["errored"] += 1
+                msg = f"  error on {Path(current_path).name}: {e}"
+                if self.progress:
+                    from tqdm import tqdm
+                    tqdm.write(msg, file=sys.stderr)
+                else:
+                    sys.stderr.write(msg + "\n")
 
         return stats
 

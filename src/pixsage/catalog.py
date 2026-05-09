@@ -128,19 +128,37 @@ class Catalog:
                 (caption, _now(), sha256),
             )
 
-    def iter_photos_for_embedding(self) -> Iterator[dict[str, Any]]:
+    def iter_photos_for_embedding(self, include_errored: bool = False) -> Iterator[dict[str, Any]]:
         """Yield rows {sha256, current_path, caption, caption_updated_at} for every
         photo that's not currently flagged with an error.
+
+        When include_errored is True, photos with a non-NULL error_reason are
+        included so the caller can retry them.
         """
-        cur = self._conn.execute(
-            """
-            SELECT sha256, current_path, caption, caption_updated_at
-            FROM photos
-            WHERE error_reason IS NULL
-            """
-        )
+        if include_errored:
+            cur = self._conn.execute(
+                """
+                SELECT sha256, current_path, caption, caption_updated_at
+                FROM photos
+                """
+            )
+        else:
+            cur = self._conn.execute(
+                """
+                SELECT sha256, current_path, caption, caption_updated_at
+                FROM photos
+                WHERE error_reason IS NULL
+                """
+            )
         for row in cur:
             yield dict(row)
+
+    def clear_error(self, sha256: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE photos SET error_reason = NULL WHERE sha256 = ?",
+                (sha256,),
+            )
 
     def needs_tagging(self, sha256: str, model_versions: dict[str, str]) -> bool:
         row = self.get_photo(sha256)

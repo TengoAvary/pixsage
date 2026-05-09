@@ -111,6 +111,24 @@ def test_runner_marks_decode_errors(catalog: Catalog, store: VectorStore, tmp_pa
     assert row["error_reason"] is not None
 
 
+def test_runner_force_retries_errored_photos(catalog: Catalog, store: VectorStore, tmp_path: Path):
+    """force=True should re-embed photos that previously errored, and clear the error on success."""
+    img_path = tmp_path / "a.jpg"
+    Image.new("RGB", (32, 32), color="red").save(img_path)
+    catalog.upsert_photo("sha-x", img_path, filesize=img_path.stat().st_size, mtime=img_path.stat().st_mtime)
+    catalog.mark_error("sha-x", "transient failure")
+
+    # Without force: skipped (filtered out)
+    EmbedRunner(catalog=catalog, vectors=store, embedder=MockEmbedder(dim=8)).run()
+    assert store.get_one("mock_image", "sha-x") is None
+    assert catalog.get_photo("sha-x")["error_reason"] is not None
+
+    # With force: re-embedded, error cleared
+    EmbedRunner(catalog=catalog, vectors=store, embedder=MockEmbedder(dim=8), force=True).run()
+    assert store.get_one("mock_image", "sha-x") is not None
+    assert catalog.get_photo("sha-x")["error_reason"] is None
+
+
 def test_runner_backfills_caption_from_xmp(catalog: Catalog, store: VectorStore, tmp_path: Path, monkeypatch):
     """If the catalog has no caption but XMP does, runner should backfill it."""
     img_path = tmp_path / "a.jpg"
