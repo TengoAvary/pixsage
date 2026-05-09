@@ -32,9 +32,15 @@ class Config(BaseModel):
 DEFAULT_CONFIG_TOML = """\
 # pixsage vocabulary configuration. Edit and re-run `pixsage tag --force` to apply.
 
+# Florence-2 produces good captions but its region/object outputs as
+# *tags* tend to be multi-word region descriptions ("traditional Dutch
+# houses along canal in Bruges, Belgium") that don't compose with
+# Lightroom's exact-match keyword filtering. RAM++ is the cleaner tag
+# source for keywords. Default keeps Florence-2 as caption-only.
+# Set florence2.tags_enabled = true if you want the region phrases too.
 [florence2]
 enabled = true
-tags_enabled = true   # set false to use Florence-2 only for captions
+tags_enabled = false
 confidence_threshold = 0.5
 exclude = ["photograph", "image", "picture"]
 

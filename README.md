@@ -59,22 +59,26 @@ Auto-applied keywords appear in the Keyword List. Hierarchical keywords show as 
 
 ## Tuning the vocabulary
 
-Edit `<photo_root>/.photoindex/vocabulary.toml`. The format:
+Edit `<photo_root>/.photoindex/vocabulary.toml`. The default looks like this:
 
 ```toml
 [florence2]
 enabled = true
+tags_enabled = false   # caption-only by default — see explanation below
 confidence_threshold = 0.5
 exclude = ["photograph", "image", "picture"]
 
 [ram_plus_plus]
 enabled = true
+tags_enabled = true
 confidence_threshold = 0.4
 exclude = []
 
 [hierarchy_overrides]
 "penguin" = "Wildlife|Bird|Penguin"
 ```
+
+**Why Florence-2 is caption-only by default.** Florence-2's caption (the long descriptive sentence in `dc:description`) is great. But its region/object outputs as *tags* tend to be multi-word phrases like `traditional Dutch houses along canal in Bruges, Belgium` that don't compose with Lightroom's exact-match keyword filtering. RAM++ is the cleaner tag source — its 4585-tag vocabulary is curated for the keyword use case. Set `florence2.tags_enabled = true` if you want the region phrases too.
 
 Re-run with `--force` (and optionally `--sample 50` first) to re-tag with the new vocabulary. **Note:** `--force` *merges* new tags with the existing XMP — it never deletes prior auto-tags. If you've improved the model or want a clean slate, use `--rewrite` (described below).
 

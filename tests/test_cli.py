@@ -18,6 +18,25 @@ needs_exiftool = pytest.mark.skipif(EXIFTOOL is None, reason="exiftool not on PA
 runner = CliRunner()
 
 
+_TEST_CONFIG_TOML = """\
+[florence2]
+enabled = true
+tags_enabled = true
+confidence_threshold = 0.5
+exclude = []
+
+[ram_plus_plus]
+enabled = true
+tags_enabled = true
+confidence_threshold = 0.4
+exclude = []
+
+[caption]
+enabled = true
+overwrite = false
+"""
+
+
 @pytest.fixture(autouse=True)
 def use_mock_taggers(monkeypatch):
     def fake_build_taggers(_config):
@@ -26,6 +45,10 @@ def use_mock_taggers(monkeypatch):
             MockTagger(name="ram++", model_version="mock-1", tags_per_call=[("bird", 0.9)]),
         ]
     monkeypatch.setattr("pixsage.cli.build_taggers", fake_build_taggers)
+    # Tests assert pipeline mechanics (merge, rewrite, user-rejection) which
+    # require both taggers to contribute actual tags. The shipped default
+    # turns Florence-2 tags off, so override DEFAULT_CONFIG_TOML for tests.
+    monkeypatch.setattr("pixsage.config.DEFAULT_CONFIG_TOML", _TEST_CONFIG_TOML)
 
 
 @needs_exiftool
