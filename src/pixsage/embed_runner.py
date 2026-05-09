@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -10,6 +11,39 @@ from pixsage.embedders.base import Embedder
 from pixsage.images import load_image
 from pixsage.vectors import VectorStore
 from pixsage.xmp import needs_sidecar, read_xmp
+
+
+# Florence-2 captions are long descriptive prose ("The image is a close-up of
+# a vintage camera resting on a piano keyboard. The camera is black and...").
+# Two problems for SigLIP2-style retrieval:
+#   1. The "The image is/shows/depicts a..." prefix consumes 4–6 tokens of
+#      pure boilerplate, identical across every photo, dragging all caption
+#      vectors into the same region of the embedding space.
+#   2. SigLIP2's text encoder was trained on short prompts (~5–15 tokens).
+#      Long prose past the first sentence (orientation cues like "back to the
+#      camera", lighting descriptions, etc.) hurts more than it helps.
+# We compress to: prefix-stripped first sentence. Empirically this matches the
+# distribution SigLIP2 was trained on and recovers lexical signal that gets
+# diluted by the rest of the caption.
+_PREFIX_RE = re.compile(
+    r"^\s*the image (is|shows|depicts|contains|features|displays|appears to (be|show))\b[^.]*?\b(an?|the|of)\b\s*",
+    re.IGNORECASE,
+)
+
+
+def normalize_caption_for_embedding(caption: str) -> str:
+    """Strip Florence-2 boilerplate prefix and keep only the first sentence.
+
+    "The image is a close-up of a vintage camera resting on a piano. The
+    camera is black..." → "vintage camera resting on a piano".
+    """
+    text = caption.strip()
+    text = _PREFIX_RE.sub("", text, count=1)
+    # First sentence (split on period followed by space or end-of-string).
+    m = re.search(r"\.\s|\.$", text)
+    if m:
+        text = text[: m.start()]
+    return text.strip() or caption.strip()  # fall back to raw if normalization emptied it
 
 
 class EmbedRunner:
@@ -90,7 +124,7 @@ class EmbedRunner:
                     self.vectors.append(info.image_kind, [(sha, img_vec)])
 
                 if needs_text:
-                    txt_vec = self.embedder.embed_text([caption])[0]
+                    txt_vec = self.embedder.embed_caption([normalize_caption_for_embedding(caption)])[0]
                     self.vectors.append(info.text_kind, [(sha, txt_vec)])
 
                 self.catalog.clear_error(sha)

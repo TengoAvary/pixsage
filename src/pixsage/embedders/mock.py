@@ -46,3 +46,11 @@ class MockEmbedder(Embedder):
         for i, t in enumerate(texts):
             out[i] = _hashed_vector(t, self.info.dim)
         return out
+
+    def embed_caption(self, texts: list[str]) -> np.ndarray:
+        # For the mock, caption space and text space share the same dim and seed
+        # scheme. Real SigLIP2 uses a separate sentence-transformer here.
+        out = np.zeros((len(texts), self.info.dim), dtype=np.float32)
+        for i, t in enumerate(texts):
+            out[i] = _hashed_vector("caption:" + t, self.info.dim)
+        return out

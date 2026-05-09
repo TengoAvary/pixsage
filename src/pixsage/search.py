@@ -51,13 +51,19 @@ class SearchService:
         if self._img_matrix.size == 0 and self._txt_matrix.size == 0:
             return []
 
-        q_vec = self.embedder.embed_text([query])[0]
+        # Two encoders, two query vectors. embed_text is the cross-modal text
+        # encoder paired with the image encoder (e.g. SigLIP2 text → image
+        # space). embed_caption is the document encoder for caption text→text
+        # retrieval (e.g. MiniLM). They live in different vector spaces and
+        # different dimensions; each scores against its own matrix.
+        visual_q = self.embedder.embed_text([query])[0]
+        caption_q = self.embedder.embed_caption([query])[0]
 
         img_scores = (
-            self._img_matrix @ q_vec if self._img_matrix.size else np.zeros(0, dtype=np.float32)
+            self._img_matrix @ visual_q if self._img_matrix.size else np.zeros(0, dtype=np.float32)
         )
         txt_scores = (
-            self._txt_matrix @ q_vec if self._txt_matrix.size else np.zeros(0, dtype=np.float32)
+            self._txt_matrix @ caption_q if self._txt_matrix.size else np.zeros(0, dtype=np.float32)
         )
 
         all_shas = set(self._idx_img.keys()) | set(self._idx_txt.keys())

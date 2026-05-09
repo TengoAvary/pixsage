@@ -43,7 +43,9 @@ def test_search_returns_top_k_by_image_when_weight_is_one(store: VectorStore, em
 
 def test_search_returns_top_k_by_caption_when_weight_is_zero(store: VectorStore, embedder: MockEmbedder):
     q_text = "leopard seal"
-    q_vec = embedder.embed_text([q_text])[0]
+    # Caption channel uses embed_caption (separate from embed_text). Seed the
+    # store with vectors close to what the query encodes to under embed_caption.
+    q_vec = embedder.embed_caption([q_text])[0]
     near = _normalize(q_vec + 0.01)
     far = _normalize(np.array([1, -1, 0.5, 0, -0.3, 0.2, 1, -1], dtype=np.float32))
     store.append("mock_text", [("sha-near", near), ("sha-far", far)])

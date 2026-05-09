@@ -9,29 +9,41 @@ from pixsage.embedders.base import Embedder, EmbedderInfo
 
 
 class SigLIP2Embedder(Embedder):
-    """Wraps google/siglip2-so400m-patch14-384.
+    """Wraps google/siglip2-so400m-patch14-384 for image+visual-query encoding,
+    plus sentence-transformers/all-MiniLM-L6-v2 for caption text→text retrieval.
 
-    Loads model + processor lazily in `load()`. Uses fp16 on CUDA, fp32 otherwise.
-    Both encoders share the model object — `embed_image` and `embed_text` go
-    through different forward paths.
+    Loads both lazily in `load()`. SigLIP2 is fp16 on CUDA, fp32 otherwise. The
+    MiniLM caption encoder is small enough (~80MB) to always run in fp32.
+
+    Why two encoders: SigLIP2's text encoder is trained to align text with
+    images (cross-modal), so it works well for `embed_text` (encoding a query
+    that we want to score against image vectors). It does NOT work well for
+    text-to-text retrieval — diagnostic on the demo corpus showed inter-caption
+    cosines clustering at 0.45 and the literal-camera photos ranking last for
+    a "camera" query. MiniLM is a sentence-transformer trained for semantic
+    text similarity; it discriminates captions cleanly.
     """
 
     MODEL_ID = "google/siglip2-so400m-patch14-384"
+    CAPTION_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+    CAPTION_DIM = 384
 
     def __init__(self) -> None:
         self.info = EmbedderInfo(
             name="siglip2-so400m-patch14-384",
             image_kind="siglip2_image",
-            text_kind="siglip2_caption",
-            dim=1152,  # so400m projection dim — verified at load time
+            text_kind="minilm_caption",
+            dim=1152,  # image_kind dim; caption_kind is CAPTION_DIM (384)
         )
         self._model: Any | None = None
         self._processor: Any | None = None
+        self._caption_model: Any | None = None
         self._device: str = "cpu"
         self._dtype: Any = None
 
     def load(self, device: str) -> None:
         import torch
+        from sentence_transformers import SentenceTransformer
         from transformers import AutoModel, AutoProcessor
 
         self._device = device
@@ -52,6 +64,8 @@ class SigLIP2Embedder(Embedder):
                 text_kind=self.info.text_kind,
                 dim=actual_dim,
             )
+        # Caption text encoder. Use the same device; MiniLM is tiny.
+        self._caption_model = SentenceTransformer(self.CAPTION_MODEL_ID, device=device)
 
     def embed_image(self, images: list[Image.Image]) -> np.ndarray:
         import torch
@@ -70,10 +84,8 @@ class SigLIP2Embedder(Embedder):
         import torch
 
         assert self._model is not None and self._processor is not None
-        # SigLIP2 text encoder has max_position_embeddings=64. Florence-2 captions
-        # routinely exceed this (we see 70-150 tokens). Truncate to fit; longer
-        # captions are clipped to their first 64 tokens, which still encode the
-        # most semantically informative portion (subject and setting).
+        # SigLIP2 text encoder has max_position_embeddings=64. Truncate short
+        # queries fit within this naturally; longer phrases get clipped.
         inputs = self._processor(
             text=texts,
             padding="max_length",
@@ -85,3 +97,12 @@ class SigLIP2Embedder(Embedder):
             features = self._model.get_text_features(**inputs)
         features = torch.nn.functional.normalize(features, dim=-1)
         return features.float().cpu().numpy()
+
+    def embed_caption(self, texts: list[str]) -> np.ndarray:
+        assert self._caption_model is not None
+        vecs = self._caption_model.encode(
+            texts,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )
+        return vecs.astype(np.float32)
