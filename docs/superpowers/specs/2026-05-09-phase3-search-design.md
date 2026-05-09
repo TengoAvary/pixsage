@@ -1,7 +1,42 @@
 # Phase 3 — Embedded Semantic Search Design
 
-Status: design, 2026-05-09
+Status: shipped 2026-05-10. The architecture below was the design as written; one
+load-bearing decision changed during real-world validation — see "Post-validation
+update" below.
+
 Source: `photo-corpus-pipeline-spec.md` (Phase 3 + a search-only slice of Phase 4)
+
+## Post-validation update (2026-05-10)
+
+The original design proposed a **single SigLIP2 model with one vector space** for
+both the image channel and the caption channel — same encoder, two heads,
+`siglip2_image` and `siglip2_caption` vectors at 1152-d each. This worked for
+the image channel but failed for caption-channel text→text retrieval:
+inter-caption cosine clustered at 0.45±0.13 (no discrimination), and a
+"camera" query ranked the literal-camera-subject photos at positions 14, 18, 20
+of 22 — at the bottom. SigLIP2's text encoder is trained for cross-modal
+text→image alignment, not document-level text→text similarity.
+
+Real architecture, as shipped:
+
+| Channel | Encoder | Vector kind | Dim |
+|---|---|---|---|
+| Image (visual) | SigLIP2-so400m-patch14-384 (image encoder + paired text encoder for cross-modal queries) | `siglip2_image` | 1152 |
+| Caption | sentence-transformers/all-MiniLM-L6-v2 (used for both caption indexing and caption-channel query encoding) | `minilm_caption` | 384 |
+
+The `Embedder` protocol gained an `embed_caption(texts)` method alongside the
+existing `embed_text(texts)`. SigLIP2Embedder implements `embed_caption` via an
+internally-loaded MiniLM model. The `SearchService` computes two query vectors
+per search (one per encoder) and scores each channel against its own matrix.
+Captions are also pre-normalized before encoding: strip the
+"The image is/shows/depicts a..." Florence-2 boilerplate, keep first sentence
+only.
+
+The rest of the design below is accurate as shipped. Wherever it says
+`siglip2_caption` or assumes a single-encoder space for the caption channel,
+substitute `minilm_caption` and the split-encoder architecture above.
+
+---
 
 ## Goal
 

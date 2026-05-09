@@ -55,7 +55,7 @@ Outputs:
 
 Enable **Catalog Settings → Metadata → Automatically write changes into XMP** once. Or, on demand: select photos → Metadata → **Read Metadata from File**.
 
-Auto-applied keywords appear in the Keyword List. Hierarchical keywords show as nested. Each photo also gets a marker tag (`auto-tagged-florence2`, `auto-tagged-ram`) — build a smart collection on these to inspect just the auto-tagged subset.
+Auto-applied keywords appear in the Keyword List. Hierarchical keywords show as nested. Tag-source attribution is recorded in the catalog DB (`<photo_root>/.photoindex/catalog.db`) — query the `tags` table on its `source` column to inspect Florence-2 vs RAM++ contributions.
 
 ## Tuning the vocabulary
 
@@ -90,7 +90,7 @@ Re-run with `--force` (and optionally `--sample 50` first) to re-tag with the ne
 
 1. Reads each photo's current XMP.
 2. Looks up which tags pixsage previously applied (from the catalog).
-3. Removes those — and our `auto-tagged-*` source markers — from `dc:subject`. Your manually-added keywords stay.
+3. Removes those — plus any legacy `auto-tagged-*` source markers from older pixsage versions — from `dc:subject`. Your manually-added keywords stay.
 4. Wipes the matching catalog rows so `user_rejected` flags reset.
 5. Runs the (now-improved) taggers and writes fresh tags.
 6. Always overwrites `dc:description` if `caption.enabled`.
@@ -141,27 +141,32 @@ pixsage tag /tmp/pixsage_smoke
 exiftool -XMP-dc:Subject -XMP-dc:Description /tmp/pixsage_smoke/*.jpg
 ```
 
-You should see keywords matching the contents of the photo, plus `auto-tagged-florence2` (and `auto-tagged-ram` if RAM++ loaded successfully) in `Subject`, and a generated caption in `Description`.
+You should see keywords matching the contents of the photo in `Subject`, and a generated caption in `Description`.
 
 ## Phase 3: Semantic search
 
 After tagging, compute embeddings and run the local search webapp:
 
 ```bash
-pixsage embed /path/to/photos
-pixsage serve /path/to/photos
+pip install -e ".[taggers,search]"  # one-time, includes sentence-transformers
+pixsage embed /path/to/photos       # embed images + captions, ~9 photos/sec on a 4090
+pixsage serve /path/to/photos       # local webapp, auto-opens browser
 ```
 
-Open http://127.0.0.1:8765/. Type a query, drag the slider to bias toward
-visual or caption matching, click any photo for "more like this".
+Open http://127.0.0.1:8765/. Type a query, drag the slider (Caption ⇄ Visual)
+to bias the blend, click any photo for "more like this".
 
-Embed runtime estimate: ~14-21 hours for 50k photos on an RTX 4090. The
-`embed` step is interruptible — re-run it to resume. Add `--limit N` for a
-quick test on a subset.
+**Two channels, two encoders.**
+- *Visual:* SigLIP2-so400m for image embedding and text→image cross-modal queries (~3 GB, downloads on first `embed` run).
+- *Caption:* sentence-transformers/all-MiniLM-L6-v2 for caption indexing and text→text semantic queries (~80 MB, downloads on first run). SigLIP2's text encoder isn't suited for text→text retrieval; MiniLM is.
 
-Install with the search extras:
-```bash
-pip install -e ".[taggers,search]"
+**Runtime.** Embed: ~9 photos/sec on an RTX 4090, so 50k photos ≈ 90 min.
+The step is interruptible — re-run to resume. Add `--limit N` for a subset.
+
+**Search latency.** GPU not required for `serve`. SigLIP2 query encoding
+runs at ~130 ms/query on CPU; MiniLM at ~5 ms; matmul against vector matrices
+is sub-millisecond. So `embed` benefits from a GPU; `serve` is fine on a
+laptop with the pre-computed `.photoindex/` directory copied over.
 ```
 
 ## Tests

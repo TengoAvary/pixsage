@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pixsage"
 version = "0.1.0"
-description = "Photographer's photo corpus pipeline — Tier 1 MVP."
+description = "Photographer's photo corpus pipeline — auto-tagging + semantic search."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -22,7 +22,10 @@ dependencies = [
 [project.optional-dependencies]
 taggers = [
   "torch>=2.2",
-  "transformers>=4.40",
+  # SigLIP2 support requires transformers >= 4.50 (the `siglip2/` module was
+  # added there). transformers 5.x demands torch >= 2.6 release-level APIs
+  # which conflict with some torch dev preview builds — cap at <5 for now.
+  "transformers>=4.50,<5",
   "rawpy>=0.21",
   "ram @ git+https://github.com/xinyu1205/recognize-anything.git",
 ]
@@ -36,6 +39,12 @@ search = [
   "uvicorn[standard]>=0.27",
   "jinja2>=3.1",
   "httpx>=0.27",
+  # Caption-channel text encoder. SigLIP2's text encoder is for cross-modal
+  # text→image retrieval and produces unusable text→text scores against
+  # caption documents; MiniLM is a sentence-transformer trained for text
+  # similarity and discriminates cleanly. ~80MB model auto-downloads on
+  # first run.
+  "sentence-transformers>=3.0",
 ]
 
 [project.scripts]
