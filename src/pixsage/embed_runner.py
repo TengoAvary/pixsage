@@ -8,6 +8,7 @@ from pixsage.catalog import Catalog
 from pixsage.embedders.base import Embedder
 from pixsage.images import load_image
 from pixsage.vectors import VectorStore
+from pixsage.xmp import needs_sidecar, read_xmp
 
 
 class EmbedRunner:
@@ -54,6 +55,19 @@ class EmbedRunner:
             current_path = row["current_path"]
             caption = row["caption"]
             caption_updated_at = row["caption_updated_at"]
+
+            # Backfill caption from XMP if catalog row predates Phase 3.
+            if caption is None and self.embed_caption:
+                try:
+                    fields = read_xmp(Path(current_path), is_raw=needs_sidecar(Path(current_path)))
+                    if fields.description:
+                        self.catalog.record_caption(sha, fields.description)
+                        caption = fields.description
+                        caption_updated_at = self.catalog.get_photo(sha)["caption_updated_at"]
+                except Exception:
+                    # XMP read failures shouldn't kill the embed run; we just skip
+                    # caption embedding for this photo.
+                    pass
 
             needs_image = self.embed_image and (
                 self.force or self.vectors.get_one(info.image_kind, sha) is None

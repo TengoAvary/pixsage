@@ -109,3 +109,27 @@ def test_runner_marks_decode_errors(catalog: Catalog, store: VectorStore, tmp_pa
 
     row = catalog.get_photo("sha-bad")
     assert row["error_reason"] is not None
+
+
+def test_runner_backfills_caption_from_xmp(catalog: Catalog, store: VectorStore, tmp_path: Path, monkeypatch):
+    """If the catalog has no caption but XMP does, runner should backfill it."""
+    img_path = tmp_path / "a.jpg"
+    Image.new("RGB", (32, 32), color="red").save(img_path)
+    catalog.upsert_photo("sha-x", img_path, filesize=img_path.stat().st_size, mtime=img_path.stat().st_mtime)
+    # Catalog caption deliberately not set.
+
+    # Stub read_xmp to return a description (no real exiftool needed).
+    from pixsage.xmp import XmpFields
+    monkeypatch.setattr(
+        "pixsage.embed_runner.read_xmp",
+        lambda path, is_raw: XmpFields(subject=[], hierarchical_subject=[], description="backfilled caption"),
+    )
+
+    runner = EmbedRunner(catalog=catalog, vectors=store, embedder=MockEmbedder(dim=8))
+    runner.run()
+
+    # After backfill, caption should be in the catalog
+    row = catalog.get_photo("sha-x")
+    assert row["caption"] == "backfilled caption"
+    # And caption vector should exist
+    assert store.get_one("mock_text", "sha-x") is not None
