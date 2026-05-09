@@ -15,7 +15,29 @@ You also need **exiftool** on PATH:
 - macOS: `brew install exiftool`
 - Linux: `apt install libimage-exiftool-perl`
 
-The first `pixsage tag` run will download Florence-2 weights (~3 GB) from Hugging Face. RAM++ may require manually downloading a checkpoint; set `PIXSAGE_RAM_CKPT=/path/to/ram_plus_swin_large_14m.pth` if you've placed it outside the working directory.
+The first `pixsage tag` run will download Florence-2 weights (~3 GB) from Hugging Face automatically.
+
+RAM++ needs a manually downloaded checkpoint:
+
+```bash
+# Linux/macOS
+curl -L -o ~/.cache/pixsage/ram_plus_swin_large_14m.pth \
+  https://huggingface.co/xinyu1205/recognize-anything-plus-model/resolve/main/ram_plus_swin_large_14m.pth
+export PIXSAGE_RAM_CKPT=~/.cache/pixsage/ram_plus_swin_large_14m.pth
+```
+
+```powershell
+# Windows
+$dir = "$env:USERPROFILE\.cache\pixsage"; New-Item -ItemType Directory -Path $dir -Force | Out-Null
+Invoke-WebRequest `
+  -Uri "https://huggingface.co/xinyu1205/recognize-anything-plus-model/resolve/main/ram_plus_swin_large_14m.pth" `
+  -OutFile "$dir\ram_plus_swin_large_14m.pth"
+$env:PIXSAGE_RAM_CKPT = "$dir\ram_plus_swin_large_14m.pth"
+```
+
+The checkpoint is ~2.9 GB. If you skip this step, RAM++ will fail to load and the pipeline will fall back to Florence-2 only.
+
+**Note for Windows users:** Florence-2's HF modeling file imports `flash_attn`, which has no Windows wheels. The pixsage wrapper registers a stub before loading and uses the eager attention implementation, so this works out of the box — you do not need to install flash_attn yourself.
 
 ## Quick start
 
