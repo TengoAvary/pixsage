@@ -68,3 +68,25 @@ def test_search_empty_query_returns_empty_results(tmp_path: Path):
         assert r.status_code == 200
         # Empty results section, no cards
         assert "card" not in r.text.lower() or 'class="card"' not in r.text
+
+
+def test_thumb_route_returns_jpeg(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/thumb/sha-a?size=small")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/jpeg"
+        assert len(r.content) > 0
+
+
+def test_thumb_route_404_for_missing_sha(tmp_path: Path):
+    from pixsage.web.app import build_app
+
+    root = _seed_root(tmp_path)
+    app = build_app(photo_root=root, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/thumb/nonexistent-sha?size=small")
+        assert r.status_code == 404

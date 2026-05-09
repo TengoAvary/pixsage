@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
+
+from pixsage.web.thumbs import ThumbSize
 
 
 def register(app: FastAPI) -> None:
@@ -56,3 +58,23 @@ def register(app: FastAPI) -> None:
             "_results.html",
             {"hits": hits, "query": q},
         )
+
+    @app.get("/thumb/{sha256}")
+    def thumb(sha256: str, size: str = "medium") -> FileResponse:
+        try:
+            thumb_size = ThumbSize(size)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"unknown size {size!r}")
+
+        catalog = app.state.catalog
+        row = catalog.get_photo(sha256)
+        if row is None or row["current_path"] is None:
+            raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
+
+        source = Path(row["current_path"])
+        if not source.exists():
+            raise HTTPException(status_code=404, detail=f"source missing on disk: {source}")
+
+        thumbs = app.state.thumbs
+        path = thumbs.get_or_create(sha256, source, thumb_size)
+        return FileResponse(path, media_type="image/jpeg")

@@ -48,6 +48,9 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
     )
     search_service.load()
 
+    from pixsage.web.thumbs import ThumbnailCache
+    app_thumbs = ThumbnailCache(photoindex / "thumbs")
+
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
     app = FastAPI(title="pixsage")
@@ -60,6 +63,7 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2") -> FastAPI:
     app.state.vectors = vectors
     app.state.embedder = embedder
     app.state.search = search_service
+    app.state.thumbs = app_thumbs
     app.state.templates = templates
 
     from pixsage.web import routes
