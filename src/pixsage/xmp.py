@@ -116,18 +116,22 @@ def _to_list(value) -> list[str]:
 
 def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
     target = _sidecar_path(path) if is_raw else path
-    # Clear and re-set to ensure exact set semantics for these fields.
+    # Repeated `-tag=val` REPLACES list-typed XMP fields atomically; an empty
+    # `-tag=` clears the field. The `+=` operator only appends and does not
+    # interact with a leading `-tag=` clear (exiftool merges both ops).
     args = [
         EXIFTOOL,
         "-overwrite_original",
         "-charset", "utf8",
-        "-XMP-dc:Subject=",
-        "-XMP-lr:HierarchicalSubject=",
     ]
-    for s in fields.subject:
-        args.append(f"-XMP-dc:Subject+={s}")
-    for h in fields.hierarchical_subject:
-        args.append(f"-XMP-lr:HierarchicalSubject+={h}")
+    if fields.subject:
+        args.extend(f"-XMP-dc:Subject={s}" for s in fields.subject)
+    else:
+        args.append("-XMP-dc:Subject=")
+    if fields.hierarchical_subject:
+        args.extend(f"-XMP-lr:HierarchicalSubject={h}" for h in fields.hierarchical_subject)
+    else:
+        args.append("-XMP-lr:HierarchicalSubject=")
     if fields.description is not None:
         args.append(f"-XMP-dc:Description={fields.description}")
     if is_raw:

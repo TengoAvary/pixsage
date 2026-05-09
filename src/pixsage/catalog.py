@@ -175,6 +175,20 @@ class Catalog:
         )
         return {(r["tag"], r["source"]) for r in cur}
 
+    def rekey_photo(self, old_sha256: str, new_sha256: str) -> None:
+        """Update the primary key of a photo + its tags. No-op if old==new."""
+        if old_sha256 == new_sha256:
+            return
+        with self._conn:
+            self._conn.execute(
+                "UPDATE photos SET sha256 = ? WHERE sha256 = ?",
+                (new_sha256, old_sha256),
+            )
+            self._conn.execute(
+                "UPDATE tags SET sha256 = ? WHERE sha256 = ?",
+                (new_sha256, old_sha256),
+            )
+
     def start_run(self, config_hash: str, model_versions: dict[str, str]) -> int:
         with self._conn:
             cur = self._conn.execute(

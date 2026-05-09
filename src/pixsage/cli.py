@@ -20,6 +20,11 @@ from pixsage.xmp import merge_xmp, needs_sidecar, read_xmp, write_xmp
 app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
 
+@app.callback()
+def _root() -> None:
+    """Force multi-command behavior so `pixsage tag ...` requires the explicit subcommand."""
+
+
 def build_taggers(config: Config) -> list[Tagger]:
     taggers: list[Tagger] = []
     if config.florence2.enabled:
@@ -143,6 +148,13 @@ def _process_one(
 
     if not dry_run:
         write_xmp(path, merged, is_raw=is_raw)
+        # Embedded XMP changes file bytes → sha256 changes. Update the catalog
+        # row's primary key so the next run skip-detects this photo correctly.
+        # (Sidecar writes don't touch the source file, so the sha stays.)
+        if not is_raw:
+            new_sha = sha256_file(path)
+            cat.rekey_photo(sha, new_sha)
+            sha = new_sha
         cat.record_tags(sha, [t for t in filtered if (t.name, t.source) not in user_rejected])
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
 
