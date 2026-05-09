@@ -36,7 +36,10 @@ class SigLIP2Embedder(Embedder):
 
         self._device = device
         self._dtype = torch.float16 if device == "cuda" else torch.float32
-        self._processor = AutoProcessor.from_pretrained(self.MODEL_ID)
+        # SigLIP2 ships a fast tokenizer (tokenizer.json) and no sentencepiece
+        # vocab. Force use_fast=True so AutoProcessor doesn't fall back to the
+        # legacy SiglipTokenizer (which would crash looking for a vocab_file).
+        self._processor = AutoProcessor.from_pretrained(self.MODEL_ID, use_fast=True)
         model = AutoModel.from_pretrained(self.MODEL_ID, torch_dtype=self._dtype)
         model.to(device).eval()
         self._model = model
@@ -67,7 +70,17 @@ class SigLIP2Embedder(Embedder):
         import torch
 
         assert self._model is not None and self._processor is not None
-        inputs = self._processor(text=texts, padding="max_length", return_tensors="pt").to(self._device)
+        # SigLIP2 text encoder has max_position_embeddings=64. Florence-2 captions
+        # routinely exceed this (we see 70-150 tokens). Truncate to fit; longer
+        # captions are clipped to their first 64 tokens, which still encode the
+        # most semantically informative portion (subject and setting).
+        inputs = self._processor(
+            text=texts,
+            padding="max_length",
+            truncation=True,
+            max_length=64,
+            return_tensors="pt",
+        ).to(self._device)
         with torch.inference_mode():
             features = self._model.get_text_features(**inputs)
         features = torch.nn.functional.normalize(features, dim=-1)
