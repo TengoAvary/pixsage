@@ -117,3 +117,53 @@ def test_merge_no_marker_tag_when_source_has_no_new_tags():
         sources_with_tags={"florence2"},
     )
     assert "auto-tagged-ram" not in merged.subject
+
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from pixsage.xmp import read_xmp, write_xmp
+
+EXIFTOOL = shutil.which("exiftool")
+needs_exiftool = pytest.mark.skipif(EXIFTOOL is None, reason="exiftool not on PATH")
+
+
+@needs_exiftool
+def test_write_and_read_jpeg(make_jpeg):
+    p = make_jpeg("rt.jpg")
+    fields = XmpFields(
+        subject=["penguin", "ice"],
+        hierarchical_subject=["Wildlife|Bird|Penguin"],
+        description="A penguin on ice.",
+    )
+    write_xmp(p, fields, is_raw=False)
+    got = read_xmp(p, is_raw=False)
+    assert set(got.subject) >= {"penguin", "ice"}
+    assert "Wildlife|Bird|Penguin" in got.hierarchical_subject
+    assert got.description == "A penguin on ice."
+
+
+@needs_exiftool
+def test_write_raw_uses_sidecar(tmp_path: Path):
+    # We don't need a real raw — exiftool will create a sidecar even from a fake path
+    # as long as we tell it to write to <path>.xmp explicitly.
+    fake_raw = tmp_path / "fake.arw"
+    fake_raw.write_bytes(b"\x00")  # contents irrelevant; exiftool only reads/writes the sidecar
+    fields = XmpFields(subject=["penguin"], hierarchical_subject=[], description=None)
+    write_xmp(fake_raw, fields, is_raw=True)
+    sidecar = tmp_path / "fake.xmp"
+    assert sidecar.exists()
+    got = read_xmp(fake_raw, is_raw=True)
+    assert "penguin" in got.subject
+
+
+@needs_exiftool
+def test_read_xmp_returns_empty_when_no_sidecar(tmp_path: Path):
+    p = tmp_path / "no_sidecar.arw"
+    p.write_bytes(b"\x00")
+    fields = read_xmp(p, is_raw=True)
+    assert fields.subject == []
+    assert fields.hierarchical_subject == []
+    assert fields.description is None

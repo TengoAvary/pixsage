@@ -56,3 +56,82 @@ def merge_xmp(
         description = existing.description
 
     return XmpFields(subject=subject_set, hierarchical_subject=hier, description=description)
+
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+EXIFTOOL = shutil.which("exiftool") or "exiftool"
+
+
+def _sidecar_path(raw_path: Path) -> Path:
+    """Lightroom sidecar convention: DSC_0001.ARW -> DSC_0001.xmp."""
+    return raw_path.with_suffix(".xmp")
+
+
+def read_xmp(path: Path, is_raw: bool) -> XmpFields:
+    target = _sidecar_path(path) if is_raw else path
+    if is_raw and not target.exists():
+        return XmpFields(subject=[], hierarchical_subject=[], description=None)
+    cmd = [
+        EXIFTOOL,
+        "-json",
+        "-XMP-dc:Subject",
+        "-XMP-lr:HierarchicalSubject",
+        "-XMP-dc:Description",
+        str(target),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"exiftool read failed: {e.stderr}") from e
+    data = json.loads(result.stdout) if result.stdout.strip() else [{}]
+    if not data:
+        return XmpFields(subject=[], hierarchical_subject=[], description=None)
+    record = data[0]
+    return XmpFields(
+        subject=_to_list(record.get("Subject")),
+        hierarchical_subject=_to_list(record.get("HierarchicalSubject")),
+        description=record.get("Description"),
+    )
+
+
+def _to_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
+    target = _sidecar_path(path) if is_raw else path
+    # Clear and re-set to ensure exact set semantics for these fields.
+    args = [
+        EXIFTOOL,
+        "-overwrite_original",
+        "-charset", "utf8",
+        "-XMP-dc:Subject=",
+        "-XMP-lr:HierarchicalSubject=",
+    ]
+    for s in fields.subject:
+        args.append(f"-XMP-dc:Subject+={s}")
+    for h in fields.hierarchical_subject:
+        args.append(f"-XMP-lr:HierarchicalSubject+={h}")
+    if fields.description is not None:
+        args.append(f"-XMP-dc:Description={fields.description}")
+    if is_raw:
+        # Write/update sidecar at target path.
+        if target.exists():
+            args.append(str(target))
+        else:
+            args.append("-o")
+            args.append(str(target))
+    else:
+        args.append(str(path))
+    try:
+        subprocess.run(args, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"exiftool write failed: {e.stderr}") from e
