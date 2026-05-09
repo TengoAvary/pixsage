@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pixsage</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>pixsage</h1>
+  </header>
+  <main>
+    <form id="search-form">
+      <input type="search" name="q" placeholder="Describe what you want to find…" autofocus />
+      <label>
+        Visual ⇄ Caption
+        <input type="range" name="image_weight" min="0" max="1" step="0.05"
+               value="{{ default_image_weight }}" />
+      </label>
+      <button type="submit">Search</button>
+    </form>
+    <section id="results"></section>
+  </main>
+</body>
+</html>
