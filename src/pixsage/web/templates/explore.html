@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pixsage · explore clusters</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1><a href="/">pixsage</a> · explore clusters</h1>
+  </header>
+  <main class="explore">
+    <p class="subtitle">
+      {{ clusters|length }} visual clusters from the image-similarity network.
+      Click a cluster to label all its photos with a location at once.
+    </p>
+    <div class="cluster-grid">
+      {% for c in clusters %}
+        <a class="cluster-card{% if c.label %} is-labelled{% endif %}" href="/cluster/{{ c.id }}">
+          <div class="cluster-thumbs">
+            {% for sha in c.sample_shas %}
+              <img src="/thumb/{{ sha }}?size=small" loading="lazy" alt="" />
+            {% endfor %}
+          </div>
+          <div class="cluster-meta">
+            <div class="cluster-size">{{ c.size }} photos</div>
+            {% if c.dominant_folder %}
+              <div class="cluster-folder">
+                {{ c.dominant_folder[0] }}
+                {% if c.folder_purity < 1.0 %}
+                  <span class="purity">({{ "%.0f"|format(c.folder_purity * 100) }}%)</span>
+                {% endif %}
+              </div>
+            {% endif %}
+            {% if c.distinctive_tags %}
+              <div class="cluster-tags">{{ c.distinctive_tags|join(' · ') }}</div>
+            {% endif %}
+            {% if c.label %}
+              <div class="cluster-label-badge">
+                {% if c.label.partial %}
+                  ⚐ partially labelled ({{ c.label.labelled }}/{{ c.label.total }})
+                {% elif c.label.place_name %}
+                  📍 {{ c.label.place_name }}
+                {% else %}
+                  📍 {{ "%.2f"|format(c.label.latitude) }}, {{ "%.2f"|format(c.label.longitude) }}
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

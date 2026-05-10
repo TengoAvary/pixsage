@@ -70,6 +70,18 @@ CREATE INDEX IF NOT EXISTS idx_geo_sha256 ON geo_predictions(sha256);
 CREATE INDEX IF NOT EXISTS idx_geo_model ON geo_predictions(model);
 """
 
+SCHEMA_USER_LOCATIONS = """
+CREATE TABLE IF NOT EXISTS user_locations (
+  sha256 TEXT PRIMARY KEY,
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  place_name TEXT,
+  applied_at TEXT,
+  applied_via TEXT,  -- e.g. 'cluster:42' or 'manual'
+  FOREIGN KEY (sha256) REFERENCES photos(sha256) ON DELETE CASCADE
+);
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -89,6 +101,7 @@ class Catalog:
             self._conn.executescript(SCHEMA_TAGS)
             self._conn.executescript(SCHEMA_RUNS)
             self._conn.executescript(SCHEMA_GEO_PREDICTIONS)
+            self._conn.executescript(SCHEMA_USER_LOCATIONS)
             self._migrate_add_caption_columns()
 
     def _migrate_add_caption_columns(self) -> None:
@@ -364,6 +377,43 @@ class Catalog:
             _GP(latitude=r["latitude"], longitude=r["longitude"], score=r["score"])
             for r in cur
         ]
+
+    def record_user_location(
+        self,
+        sha256: str,
+        latitude: float,
+        longitude: float,
+        place_name: str | None,
+        applied_via: str,
+    ) -> None:
+        """Set / replace a photographer-supplied location for one photo."""
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO user_locations
+                    (sha256, latitude, longitude, place_name, applied_at, applied_via)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(sha256) DO UPDATE SET
+                    latitude = excluded.latitude,
+                    longitude = excluded.longitude,
+                    place_name = excluded.place_name,
+                    applied_at = excluded.applied_at,
+                    applied_via = excluded.applied_via
+                """,
+                (sha256, latitude, longitude, place_name, _now(), applied_via),
+            )
+
+    def get_user_location(self, sha256: str) -> dict[str, Any] | None:
+        cur = self._conn.execute(
+            "SELECT * FROM user_locations WHERE sha256 = ?", (sha256,)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def iter_user_locations(self) -> Iterator[dict[str, Any]]:
+        cur = self._conn.execute("SELECT * FROM user_locations")
+        for row in cur:
+            yield dict(row)
 
     def iter_photos_for_geolocation(
         self, include_errored: bool = False

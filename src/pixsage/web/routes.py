@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from pixsage.web.thumbs import ThumbSize
 
@@ -98,6 +98,91 @@ def register(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/explore", response_class=HTMLResponse)
+    def explore(request: Request) -> HTMLResponse:
+        """Cluster grid for HITL location labelling."""
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+
+        # Annotate each cluster with its current label (if every photo in it has
+        # the same one — then the cluster is "labelled").
+        cluster_views = []
+        for c in clusters:
+            label = _cluster_label_summary(c, catalog)
+            cluster_views.append({
+                "id": c.cluster_id,
+                "size": c.size,
+                "sample_shas": c.sample_shas,
+                "dominant_folder": c.dominant_folder,
+                "folder_purity": c.folder_purity,
+                "distinctive_tags": c.distinctive_tags[:4],
+                "label": label,
+            })
+        return app.state.templates.TemplateResponse(
+            request, "explore.html", {"clusters": cluster_views}
+        )
+
+    @app.get("/cluster/{cluster_id}", response_class=HTMLResponse)
+    def cluster_detail(request: Request, cluster_id: int) -> HTMLResponse:
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
+        if cluster is None:
+            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
+
+        label = _cluster_label_summary(cluster, catalog)
+        return app.state.templates.TemplateResponse(
+            request,
+            "cluster.html",
+            {
+                "cluster_id": cluster.cluster_id,
+                "size": cluster.size,
+                "member_shas": cluster.member_shas,
+                "folder_distribution": cluster.folder_distribution,
+                "distinctive_tags": cluster.distinctive_tags,
+                "label": label,
+            },
+        )
+
+    @app.post("/cluster/{cluster_id}/label")
+    def cluster_label(
+        cluster_id: int,
+        latitude: float = Form(...),
+        longitude: float = Form(...),
+        place_name: str = Form(""),
+    ) -> RedirectResponse:
+        """Apply a (lat, lon, place_name) label to every photo in this cluster.
+        Writes XMP GPS + IPTC sublocation, records in user_locations table."""
+        from pixsage.xmp import needs_sidecar, write_gps
+
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
+        if cluster is None:
+            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
+
+        place = place_name.strip() or None
+        applied_via = f"cluster:{cluster_id}"
+        for sha in cluster.member_shas:
+            row = catalog.get_photo(sha)
+            if row is None or not row["current_path"]:
+                continue
+            path = Path(row["current_path"])
+            if not path.exists():
+                continue
+            try:
+                write_gps(
+                    path, latitude, longitude, place, is_raw=needs_sidecar(path)
+                )
+            except Exception as e:
+                # Don't bail mid-cluster; record what we can in catalog regardless.
+                import sys
+                print(f"  GPS write failed for {path.name}: {e}", file=sys.stderr)
+            catalog.record_user_location(
+                sha, latitude, longitude, place, applied_via
+            )
+        return RedirectResponse(f"/cluster/{cluster_id}", status_code=303)
+
     @app.get("/similar/{sha256}", response_class=HTMLResponse)
     def similar(request: Request, sha256: str) -> HTMLResponse:
         catalog = app.state.catalog
@@ -128,3 +213,60 @@ def register(app: FastAPI) -> None:
             "_results.html",
             {"hits": hits, "query": "similar images"},
         )
+
+
+def _get_or_compute_clusters(app):
+    """Lazy-compute clusters once per process; cache on app.state.clusters.
+    UMAP/HDBSCAN take ~30s on a few thousand photos, so we don't want to do
+    this per request."""
+    cached = getattr(app.state, "clusters", None)
+    if cached is not None:
+        return cached
+
+    from pixsage.analysis import load_export
+    from pixsage.clusters import compute_clusters
+
+    photo_root = app.state.photo_root
+    export = load_export(photo_root / ".photoindex")
+    shas, mats = export.aligned_matrices(require=("image_vec",))
+    if len(shas) == 0:
+        app.state.clusters = []
+        return []
+    clusters = compute_clusters(
+        shas=list(shas),
+        image_matrix=mats["image"],
+        photo_paths=export.paths,
+        photo_tags=export.tags,
+        photo_root=photo_root,
+    )
+    app.state.clusters = clusters
+    return clusters
+
+
+def _cluster_label_summary(cluster, catalog) -> dict | None:
+    """If every photo in this cluster has the same user_location, return it.
+    Otherwise return a partial summary or None."""
+    locs = []
+    for sha in cluster.member_shas:
+        loc = catalog.get_user_location(sha)
+        if loc is not None:
+            locs.append(loc)
+    if not locs:
+        return None
+    if len(locs) < cluster.size:
+        return {"partial": True, "labelled": len(locs), "total": cluster.size}
+    first = locs[0]
+    same = all(
+        round(l["latitude"], 4) == round(first["latitude"], 4)
+        and round(l["longitude"], 4) == round(first["longitude"], 4)
+        for l in locs
+    )
+    return {
+        "partial": False,
+        "labelled": len(locs),
+        "total": cluster.size,
+        "latitude": first["latitude"],
+        "longitude": first["longitude"],
+        "place_name": first["place_name"],
+        "consistent": same,
+    }

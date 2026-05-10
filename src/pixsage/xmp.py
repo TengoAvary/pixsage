@@ -107,6 +107,79 @@ def _to_list(value) -> list[str]:
     return [str(value)]
 
 
+def write_gps(
+    path: Path,
+    latitude: float,
+    longitude: float,
+    place_name: str | None,
+    is_raw: bool,
+) -> None:
+    """Write GPS lat/lon (and optionally a sublocation name) to a photo's XMP.
+
+    Lightroom's Map module reads XMP-exif:GPSLatitude / GPSLongitude with the
+    NS/EW reference tags. Iptc4xmpCore:Location populates the IPTC Sublocation
+    field (visible in Library → Metadata).
+    """
+    target = _sidecar_path(path) if is_raw else path
+    # XMP-exif's GPSLatitude string embeds the N/S letter (e.g. "64,16.79S");
+    # there's no separate XMP-exif:GPSLatitudeRef tag. Passing signed decimal
+    # degrees lets exiftool produce the correct encoding automatically.
+    args = [
+        EXIFTOOL,
+        "-overwrite_original",
+        "-charset", "utf8",
+        f"-XMP-exif:GPSLatitude={latitude}",
+        f"-XMP-exif:GPSLongitude={longitude}",
+    ]
+    if place_name:
+        args.append(f"-XMP-iptcCore:Location={place_name}")
+    if is_raw:
+        if target.exists():
+            args.append(str(target))
+        else:
+            args.append(str(path))
+            args.extend(["-o", str(target)])
+    else:
+        args.append(str(path))
+    try:
+        subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"exiftool GPS write failed: {e.stderr}") from e
+
+
+def read_gps(path: Path, is_raw: bool) -> dict | None:
+    """Read GPS coordinates back from XMP. Returns None if absent.
+
+    `-coordFormat "%+.10f"` makes exiftool emit signed decimal degrees,
+    applying the GPSLatitudeRef/LongitudeRef tags automatically.
+    """
+    target = _sidecar_path(path) if is_raw else path
+    if is_raw and not target.exists():
+        return None
+    cmd = [
+        EXIFTOOL,
+        "-json",
+        "-coordFormat", "%+.10f",
+        "-XMP-exif:GPSLatitude",
+        "-XMP-exif:GPSLongitude",
+        "-XMP-iptcCore:Location",
+        str(target),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=True)
+    except subprocess.CalledProcessError:
+        return None
+    data = json.loads(result.stdout) if result.stdout.strip() else [{}]
+    if not data or "GPSLatitude" not in data[0]:
+        return None
+    rec = data[0]
+    return {
+        "latitude": float(rec["GPSLatitude"]),
+        "longitude": float(rec["GPSLongitude"]),
+        "place_name": rec.get("Location"),
+    }
+
+
 def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
     target = _sidecar_path(path) if is_raw else path
     # Repeated `-tag=val` REPLACES list-typed XMP fields atomically; an empty

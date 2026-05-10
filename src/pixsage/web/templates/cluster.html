@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pixsage · cluster {{ cluster_id }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1><a href="/">pixsage</a> · <a href="/explore">clusters</a> · cluster {{ cluster_id }}</h1>
+  </header>
+  <main class="cluster-detail">
+    <aside class="cluster-sidebar">
+      <h2>{{ size }} photos</h2>
+      <p class="hint">
+        Distinctive: {{ distinctive_tags|join(' · ') }}
+      </p>
+      <p class="hint folder-list">
+        Folders:
+        {% for f, n in folder_distribution %}
+          <span class="folder-pill">{{ f }} ({{ n }})</span>
+        {% endfor %}
+      </p>
+
+      <form method="post" action="/cluster/{{ cluster_id }}/label" class="label-form">
+        <h3>Label this cluster</h3>
+        {% if label %}
+          {% if label.consistent %}
+            <p class="hint already">
+              Already labelled
+              {% if label.place_name %} as <strong>{{ label.place_name }}</strong>{% endif %}
+              ({{ "%.4f"|format(label.latitude) }}, {{ "%.4f"|format(label.longitude) }}).
+              Submitting will overwrite.
+            </p>
+          {% else %}
+            <p class="hint already">
+              Mixed labels currently applied to {{ label.labelled }}/{{ label.total }} photos.
+            </p>
+          {% endif %}
+        {% endif %}
+        <label>
+          Place name (optional)
+          <input type="text" name="place_name" placeholder="e.g. Seymour Island"
+                 value="{{ label.place_name if label and label.place_name else '' }}" />
+        </label>
+        <label>
+          Latitude
+          <input type="number" step="any" name="latitude" required
+                 value="{{ label.latitude if label else '' }}"
+                 placeholder="-64.2799" />
+        </label>
+        <label>
+          Longitude
+          <input type="number" step="any" name="longitude" required
+                 value="{{ label.longitude if label else '' }}"
+                 placeholder="-56.7449" />
+        </label>
+        <button type="submit">Apply to all {{ size }} photos</button>
+        <p class="hint fineprint">
+          Writes XMP GPSLatitude/GPSLongitude + IPTC Sublocation; visible in
+          Lightroom's Map module and Library metadata panel.
+        </p>
+      </form>
+    </aside>
+
+    <section class="cluster-photos">
+      <div class="cluster-photo-grid">
+        {% for sha in member_shas %}
+          <a href="/photo/{{ sha }}">
+            <img src="/thumb/{{ sha }}?size=medium" loading="lazy" alt="" />
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>
