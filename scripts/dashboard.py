@@ -143,6 +143,12 @@ def _parse_tqdm_progress(line: str) -> tuple[int, int] | None:
     return int(m.group(1)), int(m.group(2))
 
 
+def _stage_complete(stage: str) -> bool:
+    """A stage is complete when its log's final line starts with 'done.' (the
+    summary line every CLI verb prints on success)."""
+    return _last_progress_line(stage).startswith("done.")
+
+
 _disk_anchor: dict | None = None
 
 
@@ -241,10 +247,26 @@ function fmtETA(secs) {
   return h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${s}s` : `${s}s`);
 }
 function escapeHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function activeStageRow(s) {
+  if (s.stage === 'tag') {
+    return `<div class="row"><span class="label">unique / dupe paths / errored</span><span class="value">${s.photos} / ${s.dupe_writes_estimate} / ${s.errored}</span></div>`;
+  }
+  if (s.stage === 'embed') {
+    return `<div class="row"><span class="label">image / caption / errored</span><span class="value">${s.image_vecs} / ${s.caption_vecs} / ${s.errored}</span></div>`;
+  }
+  if (s.stage === 'geolocate') {
+    return `<div class="row"><span class="label">predictions / errored</span><span class="value">${s.geolocated} / ${s.errored}</span></div>`;
+  }
+  if (s.stage === 'export') {
+    return `<div class="row"><span class="label">writing zip…</span><span class="value">—</span></div>`;
+  }
+  return `<div class="row"><span class="label">unique shas / errored</span><span class="value">${s.photos} / ${s.errored}</span></div>`;
+}
 function render(s) {
-  const tagPct = s.paths_total > 0 ? Math.min(100, s.paths_done / s.paths_total * 100) : 0;
-  const embedPct = s.tagged > 0 ? Math.min(100, s.image_vecs / s.tagged * 100) : 0;
-  const geoPct = s.tagged > 0 ? Math.min(100, s.geolocated / s.tagged * 100) : 0;
+  const tagPct = s.tag_done ? 100 : (s.paths_total > 0 ? Math.min(100, s.paths_done / s.paths_total * 100) : 0);
+  const embedPct = s.embed_done ? 100 : (s.tagged > 0 ? Math.min(100, s.image_vecs / s.tagged * 100) : 0);
+  const captionPct = s.embed_done ? 100 : (s.captioned > 0 ? Math.min(100, s.caption_vecs/s.captioned*100) : 0);
+  const geoPct = s.geolocate_done ? 100 : (s.tagged > 0 ? Math.min(100, s.geolocated / s.tagged * 100) : 0);
   const stage = s.stage;
   const stageClass = ['tag','embed','geolocate','export'].includes(stage) ? stage : 'idle';
   const gpuMemPct = s.gpu ? (s.gpu.mem_used_mb / s.gpu.mem_total_mb * 100) : 0;
@@ -255,7 +277,7 @@ function render(s) {
         <div class="row"><span class="label">stage</span><span class="stage-pill ${stageClass}">${stage}</span></div>
         <div class="row"><span class="label">throughput</span><span class="value">${s.throughput_per_sec.toFixed(2)} ${stage === 'tag' ? 'paths' : 'photos'}/s</span></div>
         <div class="row"><span class="label">stage ETA</span><span class="value">${fmtETA(s.eta_seconds)}</span></div>
-        <div class="row"><span class="label">unique shas found / dupe paths / errored</span><span class="value">${s.photos} / ${s.dupe_writes_estimate} / ${s.errored}</span></div>
+        ${activeStageRow(s)}
         <div class="row"><span class="label">last log fragment</span></div>
         <div class="tail">${escapeHtml(s.last_line)}</div>
       </div>
@@ -266,7 +288,7 @@ function render(s) {
         <div class="row"><span class="label">embed (image)</span><span class="value">${s.image_vecs} / ${s.tagged}</span></div>
         ${bar(embedPct, embedPct.toFixed(1) + '%')}
         <div class="row"><span class="label">embed (caption)</span><span class="value">${s.caption_vecs} / ${s.captioned}</span></div>
-        ${bar(s.captioned > 0 ? Math.min(100, s.caption_vecs/s.captioned*100) : 0, '')}
+        ${bar(captionPct, '')}
         <div class="row"><span class="label">geolocate</span><span class="value">${s.geolocated} / ${s.tagged}</span></div>
         ${bar(geoPct, geoPct.toFixed(1) + '%')}
       </div>
@@ -328,9 +350,20 @@ def state() -> JSONResponse:
     # authoritative "how far along are we" signal. The unique-sha count is
     # informational but isn't the right denominator: it grows as new content is
     # walked, so unique-tagged ÷ unique-found prematurely shows ~100%.
-    tqdm_progress = _parse_tqdm_progress(last_line) if stage == "tag" else None
-    if tqdm_progress:
-        paths_done, paths_total = tqdm_progress
+    tag_done = _stage_complete("tag")
+    embed_done = _stage_complete("embed")
+    geolocate_done = _stage_complete("geolocate")
+    export_done = _stage_complete("export")
+
+    if stage == "tag":
+        tqdm_progress = _parse_tqdm_progress(last_line)
+        if tqdm_progress:
+            paths_done, paths_total = tqdm_progress
+        else:
+            paths_done, paths_total = 0, TOTAL_RAW_PATHS
+    elif tag_done:
+        # Past the tag stage — show it as complete.
+        paths_done = paths_total = TOTAL_RAW_PATHS
     else:
         paths_done, paths_total = 0, TOTAL_RAW_PATHS
 
@@ -366,6 +399,10 @@ def state() -> JSONResponse:
         "expected_unique": expected_unique,
         "paths_done": paths_done,
         "paths_total": paths_total,
+        "tag_done": tag_done,
+        "embed_done": embed_done,
+        "geolocate_done": geolocate_done,
+        "export_done": export_done,
         "dupe_writes_estimate": dupe_writes_estimate,
         "throughput_per_sec": rate,
         "eta_seconds": eta_seconds,
