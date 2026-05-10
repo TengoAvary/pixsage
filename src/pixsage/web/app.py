@@ -44,6 +44,10 @@ def build_app(
     catalog = Catalog(catalog_path)
     catalog.init_schema()
 
+    from pixsage.path_translation import PathResolver
+    stored_root = catalog.get_meta("photo_root_at_embed")
+    path_resolver = PathResolver(stored_root=stored_root, runtime_root=photo_root)
+
     # Lazy import to keep `pixsage embed` callable on systems without [search] installed.
     from pixsage.cli import _build_embedder
     from pixsage.device import select_device
@@ -75,6 +79,7 @@ def build_app(
     app.state.embedder = embedder
     app.state.search = search_service
     app.state.thumbs = app_thumbs
+    app.state.path_resolver = path_resolver
     app.state.templates = templates
 
     from pixsage.web import routes
