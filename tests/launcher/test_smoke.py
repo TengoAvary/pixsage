@@ -59,12 +59,7 @@ cat = Catalog(photoindex / "catalog.db")
 cat.init_schema()
 cat.set_photo_root_if_unset(photo_root)
 for jpg in photo_root.glob("*.jpg"):
-    cat._conn.execute(
-        "INSERT INTO photos (sha256, current_path, filename, filesize, mtime, added_at, last_seen_at) "
-        "VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-        (jpg.stem, str(jpg), jpg.name, jpg.stat().st_size, jpg.stat().st_mtime),
-    )
-cat._conn.commit()
+    cat.upsert_photo(jpg.stem, jpg, jpg.stat().st_size, jpg.stat().st_mtime)
 """)
 
     env = os.environ.copy()
