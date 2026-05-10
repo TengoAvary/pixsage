@@ -58,6 +58,13 @@ dashboard = [
   # readings. GPU stats use nvidia-smi via subprocess (no extra dep).
   "psutil>=5.9",
 ]
+analysis = [
+  # scripts/cluster_analysis.py: UMAP + HDBSCAN side-by-side clustering of
+  # image vs caption embedding spaces. Standard scientific-Python stack.
+  "umap-learn>=0.5",
+  "hdbscan>=0.8",
+  "scikit-learn>=1.3",
+]
 
 [project.scripts]
 pixsage = "pixsage.cli:app"
