@@ -89,7 +89,9 @@ pixsage/                         (local runtime root)
 └── version.txt                  semver of installed pixsage runtime
 ```
 
-Size: ~2.5 GB total (Python+deps ~500 MB, models ~1.8 GB, pixsage source ~1 MB).
+Size: ~780 MB after Plan 2 (Python+CPU-torch+transformers+deps ~500 MB, models ~280 MB, pixsage source ~1 MB).
+
+**Sizing note:** an earlier draft of this spec assumed ~1.8 GB of models — that was the full SigLIP2-so400m + MiniLM. Serve only ever calls `model.get_text_features(...)` (text tower) — the vision tower is unused at serve time. A post-Plan-2 follow-up extracts the SigLIP2 text tower as a standalone checkpoint (~200 MB instead of ~1.7 GB), bringing models to ~280 MB. Until that follow-up ships, Plan 2's `download_models.py` pulls the full SigLIP2 (~1.8 GB models, ~2.3 GB total runtime).
 
 #### 2. Per-folder launcher binary
 
@@ -133,10 +135,9 @@ If the substitution doesn't produce a file that exists, fall through to trying t
 
 Five scripts, all under `scripts/launcher/`:
 
-1. **`build_runtime.py --target {windows-x64,macos-arm64} --out <dir>`**
+1. **`build_runtime.py --target {windows-x64,macos-arm64} --out <dir>`** *(shipped in Plan 2)*
    - Uses [python-build-standalone](https://github.com/astral-sh/python-build-standalone) tarballs (downloadable, prebuilt portable Python for both targets).
-   - Runs `pip install --target <dir>/site-packages` against `pyproject.toml`'s `[search]` extras (the subset needed for serve — no Florence-2, no RAM++).
-   - Copies pixsage source into `site-packages/pixsage/`.
+   - Runs `pip install --target <dir>/site-packages` against `pyproject.toml`'s `[serve]` extras (added in Plan 2 — slimmer than `[taggers]`+`[search]` since rawpy + ram are tag/embed-time only).
 
 2. **`download_models.py --out <dir>`**
    - Pre-downloads SigLIP2 + MiniLM weights into a clean HF cache layout in `<dir>/models/`.
