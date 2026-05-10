@@ -265,7 +265,39 @@ useful regardless. If a better location-labelling UX emerges (interactive
 map, smarter cluster suggestions) we'd reuse the scaffolding; otherwise the
 whole experimental block is one commit to remove.
 
+## Photographer-facing launcher (Phase 5)
+
+Per-folder clickable launchers so the photographer can double-click `Pixsage Search` in any indexed folder and get the search webapp without touching a terminal.
+
+**One-time setup on her machine** (puts a portable Python + `pixsage[serve]` + pre-staged HuggingFace models under `%LOCALAPPDATA%\pixsage` on Windows or `~/Library/Application Support/pixsage` on Mac; takes ~10 minutes, downloads ~2 GB of model weights):
+
+```powershell
+# Windows
+python -m scripts.launcher.install_runtime --target windows-x64
+```
+
+```bash
+# macOS (Apple Silicon)
+python -m scripts.launcher.install_runtime --target macos-arm64
+```
+
+**Per-folder staging (run once per indexed folder, on either machine):**
+
+```bash
+pixsage stage-launchers /path/to/Sony\ alpha\ 7c
+```
+
+Drops `Pixsage Search.bat` (Windows) and `Pixsage Search.command` (macOS) into the folder. Both invoke the locally-installed runtime against the containing folder via `python -m pixsage serve <folder>`. The serve command auto-opens the default browser.
+
+**Daily use:** photographer plugs in the drive, opens an indexed folder in Explorer / Finder, double-clicks `Pixsage Search`. Browser opens to the search grid in ~3 seconds (warm) or ~10 seconds (cold SigLIP2 load).
+
+To stop: kill the python process via Task Manager / Activity Monitor (no tray icon yet — Plan 3.5 polish).
+
+Plan 1 (path translation across machines) makes this work even when the drive's letter or mount point differs between Jack's workstation and the photographer's laptop. Catalog records `photo_root_at_embed` and serve translates absolute paths at request time.
+
 ## What's still open
 
 - pHash + EXIF triple identification — Phase 2 (deferred; may be skipped if the photographer's workflow doesn't expose the limitation).
 - Vocabulary review UI — Phase 5.
+- Native single-file launcher binary (replaces the .bat/.command pair) — Plan 3.5. Eliminates the brief terminal flash on Windows and adds a tray icon for clean Quit.
+- SigLIP2 text-tower-only extraction — drops the runtime models footprint from ~1.8 GB to ~280 MB. Plan 2.5 follow-up.
