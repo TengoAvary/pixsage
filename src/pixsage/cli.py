@@ -112,6 +112,7 @@ def tag(
 
     cat = Catalog(catalog_path)
     cat.init_schema()
+    cat.set_photo_root_if_unset(photo_root)
 
     typer.echo(f"Loading taggers on device: {select_device()}")
     taggers = build_taggers(config)
@@ -324,6 +325,7 @@ def embed(
 
     cat = Catalog(catalog_path)
     cat.init_schema()  # picks up the caption migration if it's an older catalog
+    cat.set_photo_root_if_unset(photo_root)
 
     enc = _build_embedder(embedder)
     typer.echo(f"Loading embedder: {enc.info.name}")
@@ -531,6 +533,7 @@ def geolocate(
 
     cat = Catalog(catalog_path)
     cat.init_schema()  # picks up geo_predictions schema if it's an older catalog
+    cat.set_photo_root_if_unset(photo_root)
 
     geo = _build_geolocator(geolocator, top_k=top_k)
     typer.echo(f"Loading geolocator: {geo.info.name}")

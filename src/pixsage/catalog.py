@@ -168,6 +168,14 @@ class Catalog:
         row = cur.fetchone()
         return row["value"] if row else None
 
+    def set_photo_root_if_unset(self, photo_root: Path) -> None:
+        """Record the photo_root the catalog was built against, if not already set.
+        Subsequent calls with different roots are no-ops — the FIRST recorded root
+        wins. This anchor is what `PathResolver` uses to translate stored paths
+        onto a different machine at serve time."""
+        if self.get_meta("photo_root_at_embed") is None:
+            self.set_meta("photo_root_at_embed", str(photo_root))
+
     def mark_error(self, sha256: str, reason: str) -> None:
         with self._conn:
             self._conn.execute(
