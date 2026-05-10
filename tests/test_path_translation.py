@@ -1,4 +1,4 @@
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 import pytest
 
@@ -33,7 +33,8 @@ def test_resolver_falls_back_to_stored_path_when_translated_missing(tmp_path: Pa
     stored_path = r"E:\fakeroot\sub\photo.jpg"
     resolver = PathResolver(stored_root=r"E:\fakeroot", runtime_root=tmp_path / "empty")
     resolved = resolver.resolve(stored_path)
-    assert str(resolved).endswith("photo.jpg")
+    # Should return the translated-guess path (better diagnostics), not the stored string.
+    assert resolved == tmp_path / "empty" / "sub" / "photo.jpg"
 
 
 def test_resolver_handles_no_stored_root(tmp_path: Path) -> None:

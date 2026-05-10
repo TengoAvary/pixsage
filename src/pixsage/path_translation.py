@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path, PureWindowsPath, PurePosixPath
-from typing import Union
 
 
 class PathResolver:
