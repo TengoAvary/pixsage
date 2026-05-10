@@ -209,6 +209,13 @@ pixsage export    /e/Photos/Antarctica --out /e/exports/antarctica.zip
 `--include-thumbs` if you want the `serve` UI to render fast on the analysis
 machine without re-decoding raws.
 
+On the analysis machine, `pixsage.analysis.load_export()` is the canonical
+read path: returns an `Export` dataclass with sha-keyed dicts of paths,
+captions, tags, image/caption vectors, and geo predictions, plus an
+`aligned_matrices()` helper that materializes the intersection of photos
+that have any required combination of fields. `python scripts/load_export.py
+<photoindex>` prints a summary of an unpacked export.
+
 ## Tests
 
 ```bash
