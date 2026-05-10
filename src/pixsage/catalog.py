@@ -82,6 +82,14 @@ CREATE TABLE IF NOT EXISTS user_locations (
 );
 """
 
+SCHEMA_META = """
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -102,6 +110,7 @@ class Catalog:
             self._conn.executescript(SCHEMA_RUNS)
             self._conn.executescript(SCHEMA_GEO_PREDICTIONS)
             self._conn.executescript(SCHEMA_USER_LOCATIONS)
+            self._conn.executescript(SCHEMA_META)
             self._migrate_add_caption_columns()
 
     def _migrate_add_caption_columns(self) -> None:
@@ -143,6 +152,21 @@ class Catalog:
                 "UPDATE photos SET last_tagged_at = ?, model_versions = ?, error_reason = NULL WHERE sha256 = ?",
                 (_now(), json.dumps(model_versions, sort_keys=True), sha256),
             )
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO meta (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, _now()),
+            )
+
+    def get_meta(self, key: str) -> str | None:
+        cur = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,))
+        row = cur.fetchone()
+        return row["value"] if row else None
 
     def mark_error(self, sha256: str, reason: str) -> None:
         with self._conn:
