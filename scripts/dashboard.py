@@ -261,7 +261,7 @@ function render(s) {
       </div>
       <div class="card">
         <h2>pipeline progress</h2>
-        <div class="row"><span class="label">tag</span><span class="value">${s.paths_done} / ${s.paths_total} paths · ${s.photos} unique (est ~${s.expected_unique})</span></div>
+        <div class="row"><span class="label">tag</span><span class="value">${s.paths_done} / ${s.paths_total} paths · ${s.photos} unique${s.photos < s.expected_unique ? ' (est ~' + s.expected_unique + ')' : ''}</span></div>
         ${bar(tagPct, tagPct.toFixed(1) + '%')}
         <div class="row"><span class="label">embed (image)</span><span class="value">${s.image_vecs} / ${s.tagged}</span></div>
         ${bar(embedPct, embedPct.toFixed(1) + '%')}
