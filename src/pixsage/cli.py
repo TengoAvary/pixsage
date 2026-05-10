@@ -617,5 +617,23 @@ def serve(
     uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
 
 
+@app.command(name="stage-launchers")
+def stage_launchers(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+) -> None:
+    """Drop `Pixsage Search.bat` + `Pixsage Search.command` into an indexed folder.
+
+    Run once per folder after `pixsage embed` so the photographer can launch
+    the search webapp by double-clicking the launcher in Explorer / Finder.
+
+    Requires the pixsage runtime to already be installed at the canonical
+    local path (%LOCALAPPDATA%\\pixsage on Windows, ~/Library/Application
+    Support/pixsage on Mac). See `scripts/launcher/install_runtime.py`.
+    """
+    from scripts.launcher.stage_folder import stage_folder
+    stage_folder(photo_root)
+    typer.echo(f"Staged launchers in: {photo_root}")
+
+
 if __name__ == "__main__":
     app()
