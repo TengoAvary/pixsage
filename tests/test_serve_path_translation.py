@@ -1,6 +1,14 @@
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+
+
+def _make_jpeg(path: Path, color: str = "red") -> None:
+    img = Image.new("RGB", (32, 32), color=color)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(path, "JPEG")
 
 
 def test_app_state_has_path_resolver(tmp_path: Path) -> None:
@@ -28,22 +36,10 @@ def test_app_state_has_path_resolver(tmp_path: Path) -> None:
     assert resolved == target
 
 
-import io
-
-from fastapi.testclient import TestClient
-from PIL import Image
-
-
-def _make_jpeg(path: Path, color: str = "red") -> None:
-    img = Image.new("RGB", (32, 32), color=color)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    img.save(path, "JPEG")
-
-
 def test_thumb_route_resolves_translated_path(tmp_path: Path) -> None:
     """Catalog has a current_path of E:\\Sony alpha 7c\\DSC_0001.JPG,
     file actually lives at tmp_path/drive/Sony alpha 7c/DSC_0001.JPG.
-    /grid/thumb/<sha> should serve it."""
+    /thumb/<sha> should serve it."""
     from pixsage.catalog import Catalog
     from pixsage.web.app import build_app
 

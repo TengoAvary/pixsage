@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from pixsage.catalog import Catalog
 from pixsage.config import load_config, ensure_default_config
+from pixsage.path_translation import PathResolver
 from pixsage.search import SearchService
 from pixsage.vectors import VectorStore
 
@@ -44,7 +45,6 @@ def build_app(
     catalog = Catalog(catalog_path)
     catalog.init_schema()
 
-    from pixsage.path_translation import PathResolver
     stored_root = catalog.get_meta("photo_root_at_embed")
     path_resolver = PathResolver(stored_root=stored_root, runtime_root=photo_root)
 
