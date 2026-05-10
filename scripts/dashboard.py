@@ -18,6 +18,7 @@ inside the project's full-run kickoff for an example.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -131,6 +132,17 @@ def _last_progress_line(stage: str) -> str:
         return ""
 
 
+_TQDM_RE = re.compile(r"(\d+)/(\d+) \[")
+
+
+def _parse_tqdm_progress(line: str) -> tuple[int, int] | None:
+    """Extract (current, total) from a tqdm progress line. None if not parseable."""
+    m = _TQDM_RE.search(line)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
 _disk_anchor: dict | None = None
 
 
@@ -230,8 +242,7 @@ function fmtETA(secs) {
 }
 function escapeHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function render(s) {
-  const tagDenom = s.expected_unique || 1;
-  const tagPct = Math.min(100, s.tagged / tagDenom * 100);
+  const tagPct = s.paths_total > 0 ? Math.min(100, s.paths_done / s.paths_total * 100) : 0;
   const embedPct = s.tagged > 0 ? Math.min(100, s.image_vecs / s.tagged * 100) : 0;
   const geoPct = s.tagged > 0 ? Math.min(100, s.geolocated / s.tagged * 100) : 0;
   const stage = s.stage;
@@ -242,15 +253,15 @@ function render(s) {
       <div class="card">
         <h2>active stage</h2>
         <div class="row"><span class="label">stage</span><span class="stage-pill ${stageClass}">${stage}</span></div>
-        <div class="row"><span class="label">throughput</span><span class="value">${s.throughput_per_sec.toFixed(2)} photos/s</span></div>
+        <div class="row"><span class="label">throughput</span><span class="value">${s.throughput_per_sec.toFixed(2)} ${stage === 'tag' ? 'paths' : 'photos'}/s</span></div>
         <div class="row"><span class="label">stage ETA</span><span class="value">${fmtETA(s.eta_seconds)}</span></div>
-        <div class="row"><span class="label">model runs / dupe writes / errored</span><span class="value">${s.tagged} / ${s.dupe_writes_estimate} / ${s.errored}</span></div>
+        <div class="row"><span class="label">unique shas found / dupe paths / errored</span><span class="value">${s.photos} / ${s.dupe_writes_estimate} / ${s.errored}</span></div>
         <div class="row"><span class="label">last log fragment</span></div>
         <div class="tail">${escapeHtml(s.last_line)}</div>
       </div>
       <div class="card">
         <h2>pipeline progress</h2>
-        <div class="row"><span class="label">tag</span><span class="value">${s.tagged} / ~${s.expected_unique} unique shas</span></div>
+        <div class="row"><span class="label">tag</span><span class="value">${s.paths_done} / ${s.paths_total} paths · ${s.photos} unique (est ~${s.expected_unique})</span></div>
         ${bar(tagPct, tagPct.toFixed(1) + '%')}
         <div class="row"><span class="label">embed (image)</span><span class="value">${s.image_vecs} / ${s.tagged}</span></div>
         ${bar(embedPct, embedPct.toFixed(1) + '%')}
@@ -313,20 +324,26 @@ def state() -> JSONResponse:
     h = int(elapsed_s // 3600); m = int((elapsed_s % 3600) // 60); sec = int(elapsed_s % 60)
     elapsed_str = f"{h:02d}:{m:02d}:{sec:02d}"
 
-    # Expected unique shas: start from the (1 - dupe-rate) fraction of total
-    # raw paths, then refine to the actual catalog photos count once the
-    # hash+upsert pass has populated most of the catalog (catalog row count is
-    # the authoritative unique-sha count).
-    unique_estimate = int(TOTAL_RAW_PATHS * (1.0 - DUPE_RATE))
-    if cat["photos"] > 0.95 * unique_estimate:
-        expected_unique = cat["photos"]
+    # Tag stage measures progress in PATHS (the tqdm denominator) — that's the
+    # authoritative "how far along are we" signal. The unique-sha count is
+    # informational but isn't the right denominator: it grows as new content is
+    # walked, so unique-tagged ÷ unique-found prematurely shows ~100%.
+    tqdm_progress = _parse_tqdm_progress(last_line) if stage == "tag" else None
+    if tqdm_progress:
+        paths_done, paths_total = tqdm_progress
     else:
-        expected_unique = max(cat["photos"], unique_estimate)
+        paths_done, paths_total = 0, TOTAL_RAW_PATHS
 
-    # Throughput: which counter is moving depends on stage.
+    # Estimate of total unique shas in the corpus (fixed across the run): use
+    # the (1 - dupe-rate) heuristic. NOT updated to the catalog count mid-run,
+    # because the catalog only knows about shas seen so far.
+    expected_unique = int(TOTAL_RAW_PATHS * (1.0 - DUPE_RATE)) if TOTAL_RAW_PATHS else 0
+
+    # Throughput: paths/sec for tag (matches the tqdm denominator), unique/sec
+    # for embed/geolocate (those iterate the catalog, one row per unique sha).
     if stage == "tag":
-        rate, _ = _throughput("tag", cat["tagged"])
-        remaining = max(0, expected_unique - cat["tagged"])
+        rate, _ = _throughput("tag", paths_done)
+        remaining = max(0, paths_total - paths_done)
     elif stage == "embed":
         rate, _ = _throughput("embed", vec["image_vecs"])
         remaining = max(0, cat["tagged"] - vec["image_vecs"])
@@ -337,7 +354,7 @@ def state() -> JSONResponse:
         rate, remaining = 0.0, 0
     eta_seconds = (remaining / rate) if rate > 0 else 0
 
-    dupe_writes_estimate = max(0, TOTAL_RAW_PATHS - cat["photos"]) if stage == "tag" else 0
+    dupe_writes_estimate = max(0, paths_done - cat["photos"]) if stage == "tag" else 0
 
     return JSONResponse({
         "photo_root": str(PHOTOINDEX.parent),
@@ -347,6 +364,8 @@ def state() -> JSONResponse:
         **cat,
         **vec,
         "expected_unique": expected_unique,
+        "paths_done": paths_done,
+        "paths_total": paths_total,
         "dupe_writes_estimate": dupe_writes_estimate,
         "throughput_per_sec": rate,
         "eta_seconds": eta_seconds,
