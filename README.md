@@ -271,6 +271,12 @@ Per-folder clickable launchers so the photographer can double-click `Pixsage Sea
 
 **One-time setup on her machine** (puts a portable Python + `pixsage[serve]` + pre-staged HuggingFace models under `%LOCALAPPDATA%\pixsage` on Windows or `~/Library/Application Support/pixsage` on Mac; takes ~10 minutes, downloads ~2 GB of model weights):
 
+**Windows prerequisite — enable Developer Mode.** HuggingFace's model cache uses symlinks, which on Windows require either Developer Mode (no admin needed) or running as admin. Without this the install crashes with `WinError 1314: A required privilege is not held by the client` partway through the model download.
+
+> Settings → Privacy & Security → For Developers → Developer Mode → On
+
+Then:
+
 ```powershell
 # Windows
 python -m scripts.launcher.install_runtime --target windows-x64
