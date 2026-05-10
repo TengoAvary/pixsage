@@ -244,8 +244,28 @@ pytest
 
 Tests use synthetic JPEGs and `MockTagger` — no model weights needed. Tests that touch exiftool skip cleanly if it isn't on PATH.
 
+## Experimental: HITL cluster labelling
+
+The webapp has dormant routes (`/explore`, `/cluster/{id}`, `/cluster/{id}/label`)
+that surface visual-similarity clusters and let you write a single (lat, lon,
+place_name) label to every photo in a cluster at once. Originally built as a
+fallback for corpora where GeoCLIP fails (e.g. Antarctic photos predicted in
+Greenland), but in practice not part of the photographer's daily workflow.
+
+Off by default. Enable for exploration via:
+
+```python
+from pixsage.web.app import build_app
+app = build_app(photo_root, experimental_cluster_labelling=True)
+```
+
+The supporting infrastructure (`pixsage.clusters`, `pixsage.xmp.write_gps` /
+`read_gps`, the `user_locations` catalog table) is production-quality and
+useful regardless. If a better location-labelling UX emerges (interactive
+map, smarter cluster suggestions) we'd reuse the scaffolding; otherwise the
+whole experimental block is one commit to remove.
+
 ## What's still open
 
-- Cluster-level aggregation of GeoCLIP predictions, HITL location labelling — Phase 4 analysis layer (lives outside the photographer's workflow, in this repo's analysis scripts/notebooks once a corpus is exported).
 - pHash + EXIF triple identification — Phase 2 (deferred; may be skipped if the photographer's workflow doesn't expose the limitation).
 - Vocabulary review UI — Phase 5.

@@ -1,13 +1,18 @@
-"""Visual-similarity clustering of a pixsage corpus, used by the labelling UI.
+"""Visual-similarity clustering of a pixsage corpus.
 
 Clusters are computed via UMAP (cosine, → 30D) followed by HDBSCAN. The result
 is a list of `Cluster` summaries — sample shas (closest-to-medoid), folder
-dominance, and member sha sets — that drive the explore/cluster web pages.
+dominance, and member sha sets.
 
-Compute is heavy (~30s for ~1500 photos). The webapp computes lazily on the
-first /explore request and caches in process memory; recompute by restarting
-the server. Labels themselves are sha-keyed (in user_locations), so changes to
-the cluster topology don't invalidate prior labels.
+Production use today: `scripts/cluster_analysis.py` runs this offline against
+an exported `.photoindex/` to characterize a corpus's visual structure.
+
+Was also wired into the experimental HITL location-labelling UI in the
+webapp (currently disabled by default — see pixsage/web/routes.py for
+context). Kept here as a reusable building block in case we re-enable that
+flow or build a different cluster-driven feature.
+
+Compute is heavy (~30s for ~1500 photos); callers are expected to cache.
 """
 from __future__ import annotations
 

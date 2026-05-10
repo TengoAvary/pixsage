@@ -1,9 +1,8 @@
-"""Tests for the cluster labelling routes.
+"""Tests for the experimental HITL cluster labelling routes.
 
-We don't run real UMAP+HDBSCAN here — that's unit-tested elsewhere and is too
-slow for a tight loop. Instead we monkeypatch the cluster service to inject a
-fake cluster list, exercise the routes, and verify the catalog + (mocked)
-write_gps wiring.
+These routes are off by default; build_app(experimental_cluster_labelling=True)
+is the opt-in. Tests use a fake cluster list (real UMAP+HDBSCAN compute is
+unit-tested elsewhere and too slow for a tight loop).
 """
 from __future__ import annotations
 
@@ -36,7 +35,7 @@ def _make_corpus(tmp_path: Path) -> Path:
 
 
 def _build_app_with_fake_clusters(photo_root: Path):
-    app = build_app(photo_root, embedder_name="mock")
+    app = build_app(photo_root, embedder_name="mock", experimental_cluster_labelling=True)
     cat = app.state.catalog
     shas = [r["sha256"] for r in cat._conn.execute(  # noqa: SLF001
         "SELECT sha256 FROM photos ORDER BY filename"
@@ -115,6 +114,17 @@ def test_label_apply_writes_catalog_and_xmp(tmp_path: Path):
         assert loc["latitude"] == -64.2799
         assert loc["place_name"] == "Seymour Island"
         assert loc["applied_via"] == "cluster:42"
+
+
+def test_cluster_routes_404_when_flag_off(tmp_path: Path):
+    """The default `pixsage serve` invocation must not expose these routes."""
+    photo_root = _make_corpus(tmp_path)
+    app = build_app(photo_root, embedder_name="mock")  # flag off by default
+    client = TestClient(app)
+    assert client.get("/explore").status_code == 404
+    assert client.get("/cluster/42").status_code == 404
+    r = client.post("/cluster/42/label", data={"latitude": 0, "longitude": 0})
+    assert r.status_code == 404
 
 
 def test_label_apply_with_no_place_name(tmp_path: Path):

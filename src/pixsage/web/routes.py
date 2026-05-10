@@ -8,7 +8,14 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pixsage.web.thumbs import ThumbSize
 
 
-def register(app: FastAPI) -> None:
+def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> None:
+    """Register all routes on `app`.
+
+    `experimental_cluster_labelling` (default off) controls the HITL
+    cluster-based location labelling routes (/explore, /cluster/{id},
+    /cluster/{id}/label). See the comment above the cluster routes below for
+    the why-it-exists / why-it's-disabled context.
+    """
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
         templates = app.state.templates
@@ -98,91 +105,6 @@ def register(app: FastAPI) -> None:
             },
         )
 
-    @app.get("/explore", response_class=HTMLResponse)
-    def explore(request: Request) -> HTMLResponse:
-        """Cluster grid for HITL location labelling."""
-        clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
-
-        # Annotate each cluster with its current label (if every photo in it has
-        # the same one — then the cluster is "labelled").
-        cluster_views = []
-        for c in clusters:
-            label = _cluster_label_summary(c, catalog)
-            cluster_views.append({
-                "id": c.cluster_id,
-                "size": c.size,
-                "sample_shas": c.sample_shas,
-                "dominant_folder": c.dominant_folder,
-                "folder_purity": c.folder_purity,
-                "distinctive_tags": c.distinctive_tags[:4],
-                "label": label,
-            })
-        return app.state.templates.TemplateResponse(
-            request, "explore.html", {"clusters": cluster_views}
-        )
-
-    @app.get("/cluster/{cluster_id}", response_class=HTMLResponse)
-    def cluster_detail(request: Request, cluster_id: int) -> HTMLResponse:
-        clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
-        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
-        if cluster is None:
-            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
-
-        label = _cluster_label_summary(cluster, catalog)
-        return app.state.templates.TemplateResponse(
-            request,
-            "cluster.html",
-            {
-                "cluster_id": cluster.cluster_id,
-                "size": cluster.size,
-                "member_shas": cluster.member_shas,
-                "folder_distribution": cluster.folder_distribution,
-                "distinctive_tags": cluster.distinctive_tags,
-                "label": label,
-            },
-        )
-
-    @app.post("/cluster/{cluster_id}/label")
-    def cluster_label(
-        cluster_id: int,
-        latitude: float = Form(...),
-        longitude: float = Form(...),
-        place_name: str = Form(""),
-    ) -> RedirectResponse:
-        """Apply a (lat, lon, place_name) label to every photo in this cluster.
-        Writes XMP GPS + IPTC sublocation, records in user_locations table."""
-        from pixsage.xmp import needs_sidecar, write_gps
-
-        clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
-        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
-        if cluster is None:
-            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
-
-        place = place_name.strip() or None
-        applied_via = f"cluster:{cluster_id}"
-        for sha in cluster.member_shas:
-            row = catalog.get_photo(sha)
-            if row is None or not row["current_path"]:
-                continue
-            path = Path(row["current_path"])
-            if not path.exists():
-                continue
-            try:
-                write_gps(
-                    path, latitude, longitude, place, is_raw=needs_sidecar(path)
-                )
-            except Exception as e:
-                # Don't bail mid-cluster; record what we can in catalog regardless.
-                import sys
-                print(f"  GPS write failed for {path.name}: {e}", file=sys.stderr)
-            catalog.record_user_location(
-                sha, latitude, longitude, place, applied_via
-            )
-        return RedirectResponse(f"/cluster/{cluster_id}", status_code=303)
-
     @app.get("/similar/{sha256}", response_class=HTMLResponse)
     def similar(request: Request, sha256: str) -> HTMLResponse:
         catalog = app.state.catalog
@@ -213,6 +135,112 @@ def register(app: FastAPI) -> None:
             "_results.html",
             {"hits": hits, "query": "similar images"},
         )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EXPERIMENTAL: HITL cluster-based location labelling.
+    #
+    # Why this exists:
+    #   GeoCLIP failed on the Antarctic α7c corpus (0/1509 predictions in
+    #   the actual region) because YFCC100M is biased away from polar
+    #   training data. The HITL approach was: cluster photos by visual
+    #   similarity, surface clusters to the photographer, let one click
+    #   propagate a (lat, lon, place_name) label to every photo in the
+    #   cluster.
+    #
+    # Why it's disabled by default:
+    #   The photographer indicated this isn't a workflow they reach for;
+    #   they organize by folder structure and don't query by location. The
+    #   feature isn't load-bearing for the search / tag / Lightroom flow.
+    #
+    # Why the code stays:
+    #   The clusters module + write_gps / read_gps / user_locations table
+    #   are useful infrastructure regardless. If we land on a better
+    #   location-labelling UX (interactive map picker, smarter cluster
+    #   suggestions) we'd reuse this scaffolding. If we don't, deleting
+    #   this whole block (and the corresponding templates / tests / catalog
+    #   table) is a one-commit operation later.
+    #
+    # Enable for testing/exploration: build_app(..., experimental_cluster_labelling=True).
+    # ─────────────────────────────────────────────────────────────────────
+    if not experimental_cluster_labelling:
+        return
+
+    @app.get("/explore", response_class=HTMLResponse)
+    def explore(request: Request) -> HTMLResponse:
+        """Cluster grid for HITL location labelling. Experimental — see comment above."""
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+        cluster_views = []
+        for c in clusters:
+            label = _cluster_label_summary(c, catalog)
+            cluster_views.append({
+                "id": c.cluster_id,
+                "size": c.size,
+                "sample_shas": c.sample_shas,
+                "dominant_folder": c.dominant_folder,
+                "folder_purity": c.folder_purity,
+                "distinctive_tags": c.distinctive_tags[:4],
+                "label": label,
+            })
+        return app.state.templates.TemplateResponse(
+            request, "explore.html", {"clusters": cluster_views}
+        )
+
+    @app.get("/cluster/{cluster_id}", response_class=HTMLResponse)
+    def cluster_detail(request: Request, cluster_id: int) -> HTMLResponse:
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
+        if cluster is None:
+            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
+        label = _cluster_label_summary(cluster, catalog)
+        return app.state.templates.TemplateResponse(
+            request,
+            "cluster.html",
+            {
+                "cluster_id": cluster.cluster_id,
+                "size": cluster.size,
+                "member_shas": cluster.member_shas,
+                "folder_distribution": cluster.folder_distribution,
+                "distinctive_tags": cluster.distinctive_tags,
+                "label": label,
+            },
+        )
+
+    @app.post("/cluster/{cluster_id}/label")
+    def cluster_label(
+        cluster_id: int,
+        latitude: float = Form(...),
+        longitude: float = Form(...),
+        place_name: str = Form(""),
+    ) -> RedirectResponse:
+        """Apply a (lat, lon, place_name) label to every photo in this cluster.
+        Writes XMP GPS + IPTC sublocation, records in user_locations table."""
+        from pixsage.xmp import needs_sidecar, write_gps
+        clusters = _get_or_compute_clusters(app)
+        catalog = app.state.catalog
+        cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
+        if cluster is None:
+            raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
+        place = place_name.strip() or None
+        applied_via = f"cluster:{cluster_id}"
+        for sha in cluster.member_shas:
+            row = catalog.get_photo(sha)
+            if row is None or not row["current_path"]:
+                continue
+            path = Path(row["current_path"])
+            if not path.exists():
+                continue
+            try:
+                write_gps(path, latitude, longitude, place, is_raw=needs_sidecar(path))
+            except Exception as e:
+                # Don't bail mid-cluster; record what we can in catalog regardless.
+                import sys
+                print(f"  GPS write failed for {path.name}: {e}", file=sys.stderr)
+            catalog.record_user_location(
+                sha, latitude, longitude, place, applied_via
+            )
+        return RedirectResponse(f"/cluster/{cluster_id}", status_code=303)
 
 
 def _get_or_compute_clusters(app):

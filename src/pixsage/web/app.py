@@ -17,11 +17,21 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 
 
-def build_app(photo_root: Path, embedder_name: str = "siglip2", catalog_path: Path | None = None) -> FastAPI:
+def build_app(
+    photo_root: Path,
+    embedder_name: str = "siglip2",
+    catalog_path: Path | None = None,
+    *,
+    experimental_cluster_labelling: bool = False,
+) -> FastAPI:
     """Construct the FastAPI app for a photo root.
 
     Loads catalog, vectors, and the search service eagerly so route handlers
     can stay synchronous and stateless.
+
+    `experimental_cluster_labelling` controls whether the HITL location-
+    labelling routes (/explore, /cluster/{id}, /cluster/{id}/label) are
+    registered. Off by default — see routes.py for context.
     """
     photoindex = photo_root / ".photoindex"
     photoindex.mkdir(exist_ok=True)
@@ -68,6 +78,6 @@ def build_app(photo_root: Path, embedder_name: str = "siglip2", catalog_path: Pa
     app.state.templates = templates
 
     from pixsage.web import routes
-    routes.register(app)
+    routes.register(app, experimental_cluster_labelling=experimental_cluster_labelling)
 
     return app
