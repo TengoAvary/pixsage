@@ -82,3 +82,37 @@ def test_verify_python_binary_rejects_wrong_version(tmp_path: Path) -> None:
     host_python = Path(sys.executable)
     with pytest.raises(RuntimeError, match="version mismatch"):
         verify_python_binary(host_python, "9.99.999")
+
+
+def test_pip_install_invokes_target_pip(tmp_path: Path) -> None:
+    """pip_install should call the runtime's python with `-m pip install --target`."""
+    from scripts.launcher.build_runtime import pip_install
+
+    fake_python = tmp_path / "python.exe"
+    fake_python.write_bytes(b"")  # presence-only
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(cmd)
+        # Mimic CompletedProcess
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+
+    with patch("scripts.launcher.build_runtime.subprocess.run", side_effect=fake_run):
+        pip_install(
+            python_exe=fake_python,
+            target_dir=tmp_path / "site-packages",
+            project_dir=tmp_path / "project",
+            extras="serve",
+        )
+    assert len(captured) == 1
+    cmd = captured[0]
+    assert cmd[0] == str(fake_python)
+    assert cmd[1:5] == ["-m", "pip", "install", "--target"]
+    assert cmd[5] == str(tmp_path / "site-packages")
+    # The project + extras spec is the last arg
+    assert cmd[-1].endswith("[serve]")
