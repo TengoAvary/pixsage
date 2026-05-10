@@ -6,6 +6,7 @@ def test_windows_bat_invokes_runtime_pythonw_and_serves_parent_dir() -> None:
     assert "%LOCALAPPDATA%\\pixsage\\python\\pythonw.exe" in body
     assert "-m pixsage serve" in body
     assert "%~dp0" in body  # parent dir of the .bat
+    assert "set PYTHONNOUSERSITE=1" in body  # isolate from host user site-packages
 
 
 def test_macos_command_invokes_runtime_python_and_serves_parent_dir() -> None:
@@ -13,6 +14,7 @@ def test_macos_command_invokes_runtime_python_and_serves_parent_dir() -> None:
     assert "$HOME/Library/Application Support/pixsage/python/bin/python3" in body
     assert "-m pixsage serve" in body
     assert 'cd "$(dirname "$0")"' in body
+    assert "export PYTHONNOUSERSITE=1" in body  # isolate from host user site-packages
 
 
 def test_render_substitutes_only_known_placeholder() -> None:

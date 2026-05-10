@@ -14,6 +14,10 @@ from __future__ import annotations
 WINDOWS_BAT = r"""@echo off
 REM Pixsage Search launcher (Windows).
 REM Runs the locally-installed pixsage runtime against this folder.
+REM PYTHONNOUSERSITE=1 isolates the runtime from any host-Python user site-packages
+REM (e.g. a torch nightly the user installed for unrelated work) — without it,
+REM the host's torchvision can leak in and crash against the runtime's torch.
+set PYTHONNOUSERSITE=1
 start "" "{runtime_path}\python\pythonw.exe" -m pixsage serve "%~dp0"
 """
 
@@ -21,7 +25,9 @@ start "" "{runtime_path}\python\pythonw.exe" -m pixsage serve "%~dp0"
 MACOS_COMMAND = r"""#!/bin/bash
 # Pixsage Search launcher (macOS).
 # Runs the locally-installed pixsage runtime against this folder.
+# PYTHONNOUSERSITE=1 isolates the runtime from any host-Python user site-packages.
 cd "$(dirname "$0")"
+export PYTHONNOUSERSITE=1
 exec "{runtime_path}/python/bin/python3" -m pixsage serve "$PWD"
 """
 

@@ -66,6 +66,10 @@ for jpg in photo_root.glob("*.jpg"):
     env["PYTHONPATH"] = str(runtime_dir / "site-packages")
     env["HF_HOME"] = str(models_dir)
     env["HF_HUB_OFFLINE"] = "1"
+    # Critical: isolate the runtime from any host-Python user site-packages
+    # (e.g. a torch nightly the developer installed for unrelated work).
+    # Same env var is set by the .bat / .command launchers in production.
+    env["PYTHONNOUSERSITE"] = "1"
 
     subprocess.run(
         [str(python_exe), str(seed_script)],
