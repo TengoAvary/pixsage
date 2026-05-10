@@ -135,33 +135,81 @@ def tag(
     if sample > 0:
         paths = sample_paths(paths, hashes, n=sample)
 
+    # Group sampled paths by sha so we know which ones share content.
+    paths_per_sha: dict[str, list[Path]] = {}
+    for p in paths:
+        paths_per_sha.setdefault(hashes[p], []).append(p)
+
     processed = 0
     skipped = 0
     errored = 0
+    model_runs = 0
+    dupe_writes = 0
 
     # --rewrite implies --force: we never want to skip a photo we're about to wipe.
     effective_force = force or rewrite
+
+    # Per-sha caches valid for this run only:
+    #   sha_to_tags: tagger output reused across dupe paths so the model only
+    #     runs once per content
+    #   sha_prior_strip: tags-to-strip captured on the first dupe path (before
+    #     delete_tags clears the DB) so subsequent dupe paths in --rewrite mode
+    #     can still strip the old auto-tags from their XMP.
+    sha_to_tags: dict[str, tuple[list[Tag], str | None]] = {}
+    sha_prior_strip: dict[str, list[Tag]] = {}
+    seen_shas_this_run: set[str] = set()
 
     for path in tqdm(paths, unit="img"):
         sha = hashes[path]
         stat = path.stat()
         cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
-        if not effective_force and not cat.needs_tagging(sha, model_versions):
+
+        is_dupe_set = len(paths_per_sha[sha]) > 1
+        already_tagged = not effective_force and not cat.needs_tagging(sha, model_versions)
+
+        # Non-dupe paths preserve the original skip-on-rerun semantics. Dupe
+        # sets always run through option A so every path gets a sidecar even
+        # if the sha was already tagged.
+        if already_tagged and not is_dupe_set:
             skipped += 1
             continue
         if limit and processed >= limit:
             break
+
+        is_first_for_sha = sha not in seen_shas_this_run
+        seen_shas_this_run.add(sha)
+
         try:
-            _process_one(
+            if is_first_for_sha and sha not in sha_to_tags:
+                if already_tagged:
+                    # Dupe set with one sha tagged in a prior run: pull the
+                    # stored auto-tags + caption from the catalog instead of
+                    # re-running the model.
+                    sha_to_tags[sha] = _reconstitute_tags_from_catalog(sha, cat)
+                else:
+                    sha_to_tags[sha] = _run_taggers(path, taggers, config)
+                    model_runs += 1
+            elif not is_first_for_sha:
+                dupe_writes += 1
+
+            filtered_tags, caption = sha_to_tags[sha]
+            new_sha = _apply_to_path(
                 path=path,
                 sha=sha,
                 is_raw=needs_sidecar(path),
+                filtered_tags=filtered_tags,
+                caption=caption,
+                is_first_for_sha=is_first_for_sha,
                 taggers=taggers,
                 config=config,
                 cat=cat,
                 dry_run=dry_run,
                 rewrite=rewrite,
+                sha_prior_strip=sha_prior_strip,
             )
+            if new_sha != sha:
+                sha_to_tags[new_sha] = sha_to_tags[sha]
+                seen_shas_this_run.add(new_sha)
             processed += 1
         except Exception as e:  # broad: log + continue
             cat.mark_error(sha, str(e))
@@ -170,7 +218,13 @@ def tag(
 
     cat.finish_run(run_id, processed=processed, skipped=skipped, errored=errored)
     cat.close()
-    typer.echo(f"done. processed={processed} skipped={skipped} errored={errored}")
+    extras = []
+    if model_runs:
+        extras.append(f"model_runs={model_runs}")
+    if dupe_writes:
+        extras.append(f"dupe_writes={dupe_writes}")
+    extra_str = f" ({', '.join(extras)})" if extras else ""
+    typer.echo(f"done. processed={processed} skipped={skipped} errored={errored}{extra_str}")
 
 
 @app.command()
@@ -291,52 +345,88 @@ def embed(
     typer.echo(f"done. processed={stats['processed']} skipped={stats['skipped']} errored={stats['errored']}")
 
 
-def _process_one(
-    path: Path,
-    sha: str,
-    is_raw: bool,
-    taggers: list[Tagger],
-    config: Config,
-    cat: Catalog,
-    dry_run: bool,
-    rewrite: bool = False,
-) -> None:
+def _run_taggers(path: Path, taggers: list[Tagger], config: Config) -> tuple[list[Tag], str | None]:
+    """Run every enabled tagger on the image and return (filtered_tags, caption).
+    Pure model work — no catalog or XMP I/O. Result is reused across dupe paths."""
     img = load_image(path)
     raw_tags: list[Tag] = []
     caption: str | None = None
-
     for t in taggers:
         result = _tag_with_retry(t, img)
         raw_tags.extend(result.tags)
         if caption is None and result.caption:
             caption = result.caption
+    return filter_tags(raw_tags, config), caption
 
-    filtered = filter_tags(raw_tags, config)
 
+def _reconstitute_tags_from_catalog(sha: str, cat: Catalog) -> tuple[list[Tag], str | None]:
+    """Pull the (non-rejected) auto-tags + caption that were stored for this sha
+    in a prior run. Used when a dupe set contains a sha already tagged before, so
+    new copies can get sidecars without re-running the model."""
+    cur = cat._conn.execute(  # noqa: SLF001 — internal SQL is fine for our own helper
+        "SELECT tag, confidence, hierarchy, source FROM tags "
+        "WHERE sha256 = ? AND user_rejected = 0",
+        (sha,),
+    )
+    tags = [
+        Tag(
+            name=r["tag"],
+            confidence=r["confidence"] or 0.0,
+            hierarchy=r["hierarchy"],
+            source=r["source"],
+        )
+        for r in cur
+    ]
+    row = cat.get_photo(sha)
+    caption = row["caption"] if row else None
+    return tags, caption
+
+
+def _apply_to_path(
+    path: Path,
+    sha: str,
+    is_raw: bool,
+    filtered_tags: list[Tag],
+    caption: str | None,
+    is_first_for_sha: bool,
+    taggers: list[Tagger],
+    config: Config,
+    cat: Catalog,
+    dry_run: bool,
+    rewrite: bool,
+    sha_prior_strip: dict[str, list[Tag]],
+) -> str:
+    """Per-path: read existing XMP, merge with the cached auto-tags+caption,
+    write XMP, update the catalog. Returns the (possibly rekeyed) sha.
+
+    Only the FIRST path for a sha runs flag_user_rejections (the surviving-XMP
+    set is meaningful for the path that previously held our auto-tags; on a
+    fresh dupe path with empty XMP we'd otherwise mark every tag rejected).
+    """
     existing = read_xmp(path, is_raw=is_raw)
 
     if rewrite:
-        # Strip every auto-tag this photo previously got from us (and any
-        # legacy source markers from older builds) before merging. User-applied
-        # keywords stay. Also wipe the DB tag rows so user_rejected resets —
-        # the user asked for a clean slate.
-        existing = _strip_auto_artifacts(existing, cat.get_tags(sha))
-        cat.delete_tags(sha)
+        if is_first_for_sha:
+            # Capture the prior auto-tags before delete_tags wipes them; dupe
+            # paths in this run reuse the captured list to strip their own XMP.
+            prior_tags = cat.get_tags(sha)
+            sha_prior_strip[sha] = prior_tags
+            existing = _strip_auto_artifacts(existing, prior_tags)
+            cat.delete_tags(sha)
+        else:
+            existing = _strip_auto_artifacts(existing, sha_prior_strip.get(sha, []))
     else:
-        # Strip legacy source markers ("auto-tagged-florence2" / "auto-tagged-ram")
-        # written by an older pixsage version so they fade out of XMP on the
-        # next ordinary --force run. Doesn't touch user-applied keywords.
         existing = _strip_legacy_markers(existing)
 
-    cat.flag_user_rejections(sha, surviving_xmp_tags=set(existing.subject))
+    if is_first_for_sha:
+        cat.flag_user_rejections(sha, surviving_xmp_tags=set(existing.subject))
     user_rejected = cat.get_user_rejected(sha)
 
     merged = merge_xmp(
         existing=existing,
-        new_tags=filtered,
+        new_tags=filtered_tags,
         user_rejected=user_rejected,
         caption=caption if config.caption.enabled else None,
-        # --rewrite always replaces the description so config improvements take effect.
         caption_overwrite=config.caption.overwrite or rewrite,
     )
 
@@ -349,10 +439,15 @@ def _process_one(
             new_sha = sha256_file(path)
             cat.rekey_photo(sha, new_sha)
             sha = new_sha
-        cat.record_tags(sha, [t for t in filtered if (t.name, t.source) not in user_rejected])
+        if is_first_for_sha:
+            cat.record_tags(
+                sha, [t for t in filtered_tags if (t.name, t.source) not in user_rejected]
+            )
         cat.mark_tagged(sha, model_versions={t.name: t.model_version for t in taggers})
         if merged.description:
             cat.record_caption(sha, merged.description)
+
+    return sha
 
 
 def _is_legacy_marker(s: str) -> bool:

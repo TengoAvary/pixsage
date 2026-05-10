@@ -258,11 +258,25 @@ class Catalog:
         Defers FK checking to commit time so the intermediate state
         (photos.sha256 updated but tags.sha256 not yet, or vice versa)
         doesn't trip the tags→photos foreign key.
+
+        If new_sha256 already exists (e.g. another dupe-path sibling rekeyed to
+        it earlier in the same run), drop the old row instead of trying to
+        rename — the new row already represents this content correctly.
         """
         if old_sha256 == new_sha256:
             return
         with self._conn:
             self._conn.execute("PRAGMA defer_foreign_keys = ON")
+            existing = self._conn.execute(
+                "SELECT 1 FROM photos WHERE sha256 = ?", (new_sha256,)
+            ).fetchone()
+            if existing:
+                # The transient old row was created by upsert_photo for this
+                # path; tags cascade-delete (the row had none of its own).
+                self._conn.execute(
+                    "DELETE FROM photos WHERE sha256 = ?", (old_sha256,)
+                )
+                return
             self._conn.execute(
                 "UPDATE photos SET sha256 = ? WHERE sha256 = ?",
                 (new_sha256, old_sha256),
