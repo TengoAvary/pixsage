@@ -235,6 +235,17 @@ def _build_embedder(name: str):
     raise typer.BadParameter(f"unknown embedder: {name!r} (choose from: mock, siglip2)")
 
 
+def _build_geolocator(name: str, top_k: int):
+    """Construct a geolocator by short name. Lazy imports keep the CLI cold path light."""
+    if name == "mock":
+        from pixsage.geolocators.mock import MockGeolocator
+        return MockGeolocator(top_k=top_k)
+    if name == "geoclip":
+        from pixsage.geolocators.geoclip import GeoCLIPGeolocator
+        return GeoCLIPGeolocator(top_k=top_k)
+    raise typer.BadParameter(f"unknown geolocator: {name!r} (choose from: geoclip, mock)")
+
+
 @app.command()
 def embed(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -397,6 +408,82 @@ def _tag_with_retry(tagger: Tagger, image: Image.Image) -> TagResult:
 def _resize_to_long_edge(img: Image.Image, target: int) -> Image.Image:
     from pixsage.images import _resize_long_edge
     return _resize_long_edge(img, target)
+
+
+@app.command()
+def geolocate(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    geolocator: str = typer.Option(
+        "geoclip", "--geolocator",
+        help="Geolocator to use. Choices: geoclip, mock (mock is for testing only).",
+    ),
+    top_k: int = typer.Option(5, "--top-k", min=1, help="Number of top GPS predictions to store per photo."),
+    force: bool = typer.Option(False, "--force", help="Re-predict photos that already have geo predictions for this model."),
+    catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
+) -> None:
+    """Predict GPS coordinates for each catalogued photo and store the top-K in the catalog.
+
+    Predictions live in the geo_predictions table and travel with the catalog.db,
+    so the analysis machine doesn't need the source photos to read them back.
+    """
+    from pixsage.geo_runner import GeoRunner
+
+    photoindex = photo_root / ".photoindex"
+    catalog_path = catalog or (photoindex / "catalog.db")
+    if not catalog_path.exists():
+        typer.echo(f"no catalog at {catalog_path}; run `pixsage tag` first", err=True)
+        raise typer.Exit(code=1)
+
+    cat = Catalog(catalog_path)
+    cat.init_schema()  # picks up geo_predictions schema if it's an older catalog
+
+    geo = _build_geolocator(geolocator, top_k=top_k)
+    typer.echo(f"Loading geolocator: {geo.info.name}")
+    geo.load(select_device())
+
+    runner = GeoRunner(catalog=cat, geolocator=geo, force=force, progress=True)
+    stats = runner.run()
+    cat.close()
+    typer.echo(f"done. processed={stats['processed']} skipped={stats['skipped']} errored={stats['errored']}")
+
+
+@app.command()
+def export(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    out: Path = typer.Option(..., "--out", help="Path to the output zip (e.g. catalog-export.zip)."),
+    include_thumbs: bool = typer.Option(
+        False, "--include-thumbs",
+        help="Also bundle the thumbnail cache. Off by default — thumbs regenerate from photos and bloat the export.",
+    ),
+) -> None:
+    """Bundle the .photoindex/ directory into a portable zip for offline analysis.
+
+    The catalog.db, vector parquet files, vocabulary.toml, and (optionally)
+    thumbnails are included. Source photos are not — analysis on the receiving
+    machine works directly off the catalog/vectors and never opens the originals.
+    """
+    import zipfile
+
+    photoindex = photo_root / ".photoindex"
+    if not photoindex.exists():
+        typer.echo(f"no .photoindex at {photoindex}", err=True)
+        raise typer.Exit(code=1)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    file_count = 0
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in photoindex.rglob("*"):
+            if p.is_dir():
+                continue
+            rel = p.relative_to(photoindex)
+            if not include_thumbs and rel.parts and rel.parts[0] == "thumbs":
+                continue
+            zf.write(p, arcname=str(rel))
+            file_count += 1
+
+    size_mb = out.stat().st_size / (1024 * 1024)
+    typer.echo(f"wrote {out} ({file_count} files, {size_mb:.1f} MB)")
 
 
 @app.command()

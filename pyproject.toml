@@ -46,6 +46,12 @@ search = [
   # first run.
   "sentence-transformers>=3.0",
 ]
+geo = [
+  # GeoCLIP: image → top-K (lat, lon, probability) using a CLIP image encoder
+  # paired with a learned location encoder. MIT licensed. Pulls torch +
+  # torchvision, which the [taggers] extra already does.
+  "geoclip>=1.2",
+]
 
 [project.scripts]
 pixsage = "pixsage.cli:app"

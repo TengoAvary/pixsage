@@ -169,6 +169,46 @@ is sub-millisecond. So `embed` benefits from a GPU; `serve` is fine on a
 laptop with the pre-computed `.photoindex/` directory copied over.
 ```
 
+## Phase 4 (in progress): geolocation + offline analysis
+
+`pixsage geolocate` runs [GeoCLIP](https://github.com/VicenteVivan/geo-clip)
+over each catalogued photo and stores the top-K (lat, lon, probability)
+predictions in the catalog. Per-photo predictions on out-of-distribution
+content (e.g. Antarctic wildlife) are noisy on their own — the intended use
+is cluster-level aggregation: combine GeoCLIP predictions with the SigLIP2
+similarity network and look for clusters where predictions cohere on a
+location, then surface uncertain clusters to the user for HITL labelling.
+
+```bash
+pip install -e ".[taggers,search,geo]"   # adds the geoclip dep
+pixsage geolocate /path/to/photos        # top-K=5 by default
+```
+
+Predictions land in the `geo_predictions` table (`sha256, model, rank, lat,
+lon, score, created_at`) — they travel with `catalog.db` and don't need the
+source photos to read back.
+
+### Offline analysis workflow
+
+The clustering / aggregation work runs on a separate machine. The
+`.photoindex/` directory is the portable artifact: catalog DB, vector
+parquets, vocabulary config — everything except the source photos.
+
+```bash
+# On the photographer's drive (the machine with photos + GPU):
+pixsage tag       /e/Photos/Antarctica
+pixsage embed     /e/Photos/Antarctica
+pixsage geolocate /e/Photos/Antarctica
+pixsage export    /e/Photos/Antarctica --out /e/exports/antarctica.zip
+
+# On the analysis machine: unzip, point pixsage at the unpacked .photoindex/,
+# or read catalog.db + vectors/*.parquet directly with sqlite3 / pyarrow.
+```
+
+`export` skips the regenerable `thumbs/` cache by default. Pass
+`--include-thumbs` if you want the `serve` UI to render fast on the analysis
+machine without re-decoding raws.
+
 ## Tests
 
 ```bash
@@ -178,9 +218,8 @@ pytest
 
 Tests use synthetic JPEGs and `MockTagger` — no model weights needed. Tests that touch exiftool skip cleanly if it isn't on PATH.
 
-## What's not in Phase 1
+## What's still open
 
-- Embeddings, similarity search, captions beyond a single sentence, geo estimation, clustering — Phase 2.
-- Web app — Phase 4.
-- pHash / EXIF triple identification — Phase 2.
+- Cluster-level aggregation of GeoCLIP predictions, HITL location labelling — Phase 4 analysis layer (lives outside the photographer's workflow, in this repo's analysis scripts/notebooks once a corpus is exported).
+- pHash + EXIF triple identification — Phase 2 (deferred; may be skipped if the photographer's workflow doesn't expose the limitation).
 - Vocabulary review UI — Phase 5.

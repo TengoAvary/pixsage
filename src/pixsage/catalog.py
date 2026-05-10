@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
+    from pixsage.geolocators.base import GeoPrediction
     from pixsage.taggers.base import Tag
 
 SCHEMA_PHOTOS = """
@@ -53,6 +54,22 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 
+SCHEMA_GEO_PREDICTIONS = """
+CREATE TABLE IF NOT EXISTS geo_predictions (
+  sha256 TEXT NOT NULL,
+  model TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  score REAL NOT NULL,
+  created_at TEXT,
+  PRIMARY KEY (sha256, model, rank),
+  FOREIGN KEY (sha256) REFERENCES photos(sha256) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_geo_sha256 ON geo_predictions(sha256);
+CREATE INDEX IF NOT EXISTS idx_geo_model ON geo_predictions(model);
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -71,6 +88,7 @@ class Catalog:
             self._conn.executescript(SCHEMA_PHOTOS)
             self._conn.executescript(SCHEMA_TAGS)
             self._conn.executescript(SCHEMA_RUNS)
+            self._conn.executescript(SCHEMA_GEO_PREDICTIONS)
             self._migrate_add_caption_columns()
 
     def _migrate_add_caption_columns(self) -> None:
@@ -298,3 +316,54 @@ class Catalog:
     def list_runs(self) -> list[dict[str, Any]]:
         cur = self._conn.execute("SELECT * FROM runs ORDER BY run_id")
         return [dict(r) for r in cur]
+
+    def record_geo_predictions(
+        self, sha256: str, model: str, predictions: list[GeoPrediction]
+    ) -> None:
+        """Replace any existing predictions for (sha256, model) with the new top-K."""
+        now = _now()
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM geo_predictions WHERE sha256 = ? AND model = ?",
+                (sha256, model),
+            )
+            for rank, p in enumerate(predictions):
+                self._conn.execute(
+                    """
+                    INSERT INTO geo_predictions
+                        (sha256, model, rank, latitude, longitude, score, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (sha256, model, rank, p.latitude, p.longitude, p.score, now),
+                )
+
+    def get_geo_predictions(self, sha256: str, model: str) -> list[GeoPrediction]:
+        from pixsage.geolocators.base import GeoPrediction as _GP  # noqa: PLC0415
+        cur = self._conn.execute(
+            """
+            SELECT latitude, longitude, score FROM geo_predictions
+            WHERE sha256 = ? AND model = ? ORDER BY rank
+            """,
+            (sha256, model),
+        )
+        return [
+            _GP(latitude=r["latitude"], longitude=r["longitude"], score=r["score"])
+            for r in cur
+        ]
+
+    def iter_photos_for_geolocation(
+        self, include_errored: bool = False
+    ) -> Iterator[dict[str, Any]]:
+        """Yield {sha256, current_path} for photos the geolocator should consider.
+
+        Errored photos are excluded by default so a corpus-wide run skips known-bad
+        photos. Pass include_errored=True (e.g. when --force is set) to retry them.
+        """
+        if include_errored:
+            cur = self._conn.execute("SELECT sha256, current_path FROM photos")
+        else:
+            cur = self._conn.execute(
+                "SELECT sha256, current_path FROM photos WHERE error_reason IS NULL"
+            )
+        for row in cur:
+            yield dict(row)
