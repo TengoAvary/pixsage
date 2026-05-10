@@ -41,3 +41,4 @@ huggingface/
 tests/demo_corpus/
 .claude/
 pytest_output.txt
+exports/

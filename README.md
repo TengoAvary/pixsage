@@ -216,6 +216,25 @@ captions, tags, image/caption vectors, and geo predictions, plus an
 that have any required combination of fields. `python scripts/load_export.py
 <photoindex>` prints a summary of an unpacked export.
 
+### Live monitoring
+
+For long full-corpus runs, `scripts/dashboard.py` is a small FastAPI page that
+polls the catalog DB + parquet vector files + system stats every 2 seconds:
+
+```bash
+pip install -e ".[search,dashboard]"
+python scripts/dashboard.py /path/to/photo_root \
+    --logdir /path/to/full-run-logs \
+    --total-raw-paths 2123 \
+    --dupe-rate 0.36 \
+    --port 8766
+```
+
+Shows: active stage + tqdm tail + per-stage progress bars + throughput and
+ETA + CPU / RAM / GPU (via `nvidia-smi`) / disk read MB/s. Open
+`http://127.0.0.1:8766/`. The orchestrating shell script is expected to
+redirect each stage's stdout to `<logdir>/<stage>.log`.
+
 ## Tests
 
 ```bash

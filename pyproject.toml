@@ -52,6 +52,12 @@ geo = [
   # torchvision, which the [taggers] extra already does.
   "geoclip>=1.2",
 ]
+dashboard = [
+  # scripts/dashboard.py: live progress + system load monitor for long pipeline
+  # runs. Reuses fastapi/uvicorn from [search]; adds psutil for CPU/RAM/disk
+  # readings. GPU stats use nvidia-smi via subprocess (no extra dep).
+  "psutil>=5.9",
+]
 
 [project.scripts]
 pixsage = "pixsage.cli:app"
