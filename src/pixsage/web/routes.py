@@ -78,7 +78,8 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         if row is None or row["current_path"] is None:
             raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
 
-        source = Path(row["current_path"])
+        resolver = app.state.path_resolver
+        source = resolver.resolve(row["current_path"])
         if not source.exists():
             raise HTTPException(status_code=404, detail=f"source missing on disk: {source}")
 
@@ -228,7 +229,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             row = catalog.get_photo(sha)
             if row is None or not row["current_path"]:
                 continue
-            path = Path(row["current_path"])
+            path = app.state.path_resolver.resolve(row["current_path"])
             if not path.exists():
                 continue
             try:
