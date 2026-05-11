@@ -41,4 +41,5 @@ huggingface/
 tests/demo_corpus/
 .claude/
 pytest_output.txt
+.smoke.log
 exports/
