@@ -50,6 +50,13 @@ def merge_xmp(
     return XmpFields(subject=subject_set, hierarchical_subject=hier, description=description)
 
 
+@dataclass(frozen=True)
+class CameraGps:
+    latitude: float
+    longitude: float
+    altitude: float | None
+
+
 import json  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
@@ -178,6 +185,40 @@ def read_gps(path: Path, is_raw: bool) -> dict | None:
         "longitude": float(rec["GPSLongitude"]),
         "place_name": rec.get("Location"),
     }
+
+
+def read_camera_gps(path: Path) -> CameraGps | None:
+    """Read EXIF GPS tags directly from a file (never a sidecar).
+
+    Returns None when GPS is absent or when latitude AND longitude are both
+    near zero (the (0,0) "no fix" sentinel seen in some old devices). The `#`
+    suffix on each tag forces signed decimal output, applying the
+    GPSLatitudeRef/LongitudeRef letters automatically.
+    """
+    cmd = [
+        EXIFTOOL,
+        "-json",
+        "-coordFormat", "%+.10f",
+        "-GPSLatitude",
+        "-GPSLongitude",
+        "-EXIF:GPSAltitude#",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=True)
+    except subprocess.CalledProcessError:
+        return None
+    data = json.loads(result.stdout) if result.stdout.strip() else [{}]
+    if not data or "GPSLatitude" not in data[0] or "GPSLongitude" not in data[0]:
+        return None
+    rec = data[0]
+    lat = float(rec["GPSLatitude"])
+    lon = float(rec["GPSLongitude"])
+    if abs(lat) < 0.01 and abs(lon) < 0.01:
+        return None
+    alt_raw = rec.get("GPSAltitude")
+    altitude = float(alt_raw) if alt_raw is not None else None
+    return CameraGps(latitude=lat, longitude=lon, altitude=altitude)
 
 
 def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
