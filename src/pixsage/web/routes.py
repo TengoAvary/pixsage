@@ -128,6 +128,36 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             },
         )
 
+    @app.post("/catalogs/add")
+    def add_catalog(path: str = Form(...)) -> RedirectResponse:
+        from pixsage.registry import derive_signatures
+
+        registry = app.state.registry
+        p = Path(path).resolve()
+        if not p.exists():
+            raise HTTPException(status_code=400, detail=f"path does not exist: {p}")
+        photoindex = p / ".photoindex" if (p / ".photoindex").exists() else p
+        if not (photoindex / "catalog.db").exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"no .photoindex/catalog.db under {p}",
+            )
+        if registry.find_by_photoindex_path(str(photoindex)) is not None:
+            return RedirectResponse(url="/", status_code=303)
+
+        img_sig, cap_sig = derive_signatures(photoindex)
+        label = p.name if photoindex.name == ".photoindex" else photoindex.parent.name
+        entry = registry.add(
+            photoindex_path=str(photoindex),
+            label=label,
+            image_embedder_signature=img_sig,
+            caption_embedder_signature=cap_sig,
+        )
+        entry.available = True
+        registry.save()
+        _load_catalog_into_multi(app, entry)
+        return RedirectResponse(url="/", status_code=303)
+
     @app.post("/catalogs/{catalog_id}/toggle")
     def toggle_catalog(catalog_id: str) -> RedirectResponse:
         registry = app.state.registry
