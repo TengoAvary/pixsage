@@ -70,3 +70,28 @@ def test_search_returns_empty_when_no_catalogs() -> None:
     hits = multi.search("anything", image_weight=0.5, top_k=5,
                         query_image_sig="x", query_caption_sig="y")
     assert hits == []
+
+
+def test_search_by_image_delegates_to_owning_catalog() -> None:
+    sony = MagicMock()
+    sony.search_by_image.return_value = [Hit(sha256="other-sha", score=0.8)]
+    iphone = MagicMock()
+    iphone.search_by_image.return_value = [Hit(sha256="wrong", score=0.99)]
+
+    multi = MultiSearchService()
+    multi.add_catalog("sony", sony, image_sig="x", caption_sig="y")
+    multi.add_catalog("iphone", iphone, image_sig="x", caption_sig="y")
+
+    hits = multi.search_by_image(catalog_id="sony", sha256="query-sha", top_k=5)
+    sony.search_by_image.assert_called_once_with(sha256="query-sha", top_k=5)
+    iphone.search_by_image.assert_not_called()
+    assert len(hits) == 1
+    assert hits[0].catalog_id == "sony"
+    assert hits[0].sha256 == "other-sha"
+
+
+def test_search_by_image_unknown_catalog_returns_empty() -> None:
+    multi = MultiSearchService()
+    multi.add_catalog("sony", MagicMock(), image_sig="x", caption_sig="y")
+    hits = multi.search_by_image(catalog_id="nonexistent", sha256="x", top_k=5)
+    assert hits == []

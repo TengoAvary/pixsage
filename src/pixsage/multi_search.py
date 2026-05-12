@@ -90,3 +90,24 @@ class MultiSearchService:
 
         all_hits.sort(key=lambda h: h.score, reverse=True)
         return all_hits[:top_k]
+
+    def search_by_image(
+        self,
+        catalog_id: str,
+        sha256: str,
+        top_k: int,
+    ) -> list[MultiHit]:
+        """Single-catalog 'more like this'. v1 doesn't cross catalog boundaries.
+
+        The caller passes catalog_id because /similar/{catalog_id}/{sha} routes
+        carry it explicitly. If the catalog isn't loaded (offline / removed),
+        return [] rather than raising — the UI shows a friendly error.
+        """
+        slot = self._catalogs.get(catalog_id)
+        if slot is None:
+            return []
+        per_cat_hits = slot.service.search_by_image(sha256=sha256, top_k=top_k)
+        return [
+            MultiHit(sha256=h.sha256, score=h.score, catalog_id=catalog_id)
+            for h in per_cat_hits
+        ]
