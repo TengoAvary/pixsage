@@ -139,6 +139,41 @@ class Registry:
             raise KeyError(f"no catalog with id {id!r}")
         e.available = available
 
+    def refresh_from_discovery(self, discovered_paths: list[Path]) -> None:
+        """Reconcile the registry against the filesystem.
+
+        For each existing entry: set `available` based on whether its
+        photoindex_path exists.
+
+        For each discovered path not yet in the registry: add it (toggled on)
+        and mark it available. The label defaults to the parent directory's
+        name (e.g. /Volumes/Sony/.photoindex -> "Sony").
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        # Step 1: refresh availability for known entries.
+        for e in self._entries:
+            e.available = Path(e.photoindex_path).exists()
+            if e.available:
+                e.last_seen = now
+
+        # Step 2: auto-add new discoveries.
+        for p in discovered_paths:
+            p = Path(p).resolve()
+            if self.find_by_photoindex_path(str(p)) is not None:
+                continue
+            label = p.parent.name  # /Volumes/Sony/.photoindex -> "Sony"
+            img_sig, cap_sig = derive_signatures(p)
+            entry = self.add(
+                photoindex_path=str(p),
+                label=label,
+                image_embedder_signature=img_sig,
+                caption_embedder_signature=cap_sig,
+                enabled=True,
+            )
+            entry.available = True
+
 
 # Default signatures used when a catalog's meta doesn't record them.
 # Matches what pixsage currently embeds with: SigLIP2-so400m + MiniLM-L6-v2.

@@ -189,3 +189,83 @@ def test_derive_signatures_falls_back_to_defaults(tmp_path: Path) -> None:
     img, cap = derive_signatures(photoindex)
     assert img == DEFAULT_IMAGE_SIGNATURE
     assert cap == DEFAULT_CAPTION_SIGNATURE
+
+
+def test_refresh_marks_existing_available(tmp_path: Path) -> None:
+    """A registered entry whose photoindex_path exists is marked available."""
+    photoindex = tmp_path / "Sony" / ".photoindex"
+    photoindex.mkdir(parents=True)
+    (photoindex / "catalog.db").write_bytes(b"")
+
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    e = reg.add(
+        photoindex_path=str(photoindex.resolve()),
+        label="Sony",
+        image_embedder_signature="x",
+        caption_embedder_signature="y",
+    )
+    reg.refresh_from_discovery(discovered_paths=[])
+    assert reg.find_by_id(e.id).available is True
+
+
+def test_refresh_marks_missing_offline(tmp_path: Path) -> None:
+    """A registered entry whose path doesn't exist is marked offline."""
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    e = reg.add(
+        photoindex_path="/Volumes/NotMounted/.photoindex",
+        label="Offline",
+        image_embedder_signature="x",
+        caption_embedder_signature="y",
+    )
+    reg.refresh_from_discovery(discovered_paths=[])
+    assert reg.find_by_id(e.id).available is False
+
+
+def test_refresh_auto_adds_new_discoveries(tmp_path: Path, monkeypatch) -> None:
+    """A discovered path that's not in the registry gets added, toggled on."""
+    photoindex = tmp_path / "iPhone" / ".photoindex"
+    photoindex.mkdir(parents=True)
+    (photoindex / "catalog.db").write_bytes(b"")
+
+    # Stub derive_signatures so we don't need a real catalog schema
+    from pixsage import registry as registry_mod
+    monkeypatch.setattr(
+        registry_mod, "derive_signatures",
+        lambda p: ("siglip2@v1", "minilm@v2"),
+    )
+
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    reg.refresh_from_discovery(discovered_paths=[photoindex.resolve()])
+
+    entries = list(reg.entries())
+    assert len(entries) == 1
+    assert entries[0].enabled is True
+    assert entries[0].available is True
+    assert entries[0].label == "iPhone"  # derived from parent dir name
+
+
+def test_refresh_does_not_duplicate_known_path(tmp_path: Path, monkeypatch) -> None:
+    """Discovering an already-registered path is a no-op (no duplicate)."""
+    photoindex = tmp_path / "Sony" / ".photoindex"
+    photoindex.mkdir(parents=True)
+    (photoindex / "catalog.db").write_bytes(b"")
+
+    from pixsage import registry as registry_mod
+    monkeypatch.setattr(
+        registry_mod, "derive_signatures",
+        lambda p: ("siglip2@v1", "minilm@v2"),
+    )
+
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    reg.add(
+        photoindex_path=str(photoindex.resolve()),
+        label="Sony",
+        image_embedder_signature="x",
+        caption_embedder_signature="y",
+    )
+    reg.refresh_from_discovery(discovered_paths=[photoindex.resolve()])
+    assert len(list(reg.entries())) == 1
