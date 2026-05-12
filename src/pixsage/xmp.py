@@ -227,6 +227,63 @@ def read_camera_gps(path: Path) -> CameraGps | None:
     return CameraGps(latitude=lat, longitude=lon, altitude=altitude)
 
 
+def read_metadata(path: Path, is_raw: bool) -> tuple[XmpFields, CameraGps | None]:
+    """Read XMP fields + camera EXIF GPS from a photo.
+
+    For embedded-XMP files (DNG, JPEG, HEIC, raws without a sidecar present),
+    a single exiftool subprocess fetches both — the EXIF and XMP IFDs live in
+    the same file, so we just ask for both tag families at once.
+
+    For raw+sidecar files, the XMP fields live in the .xmp sidecar but the
+    EXIF GPS lives in the raw — two subprocesses.
+
+    Composite (no-namespace) `-GPSLatitude`/`-GPSLongitude` are used because
+    `-coordFormat` only applies the GPSLatitudeRef/LongitudeRef sign correction
+    to composite tags; the namespace-qualified `-EXIF:GPSLatitude` form ignores
+    `-coordFormat` and returns the unsigned stored value, which silently breaks
+    southern/western hemispheres.
+    """
+    if is_raw:
+        # XMP from sidecar (existing behaviour); GPS from the raw separately.
+        xmp = read_xmp(path, is_raw=True)
+        gps = read_camera_gps(path)
+        return xmp, gps
+
+    # Embedded path: one subprocess covers both.
+    cmd = [
+        EXIFTOOL,
+        "-json",
+        "-coordFormat", "%+.10f",
+        "-XMP-dc:Subject",
+        "-XMP-lr:HierarchicalSubject",
+        "-XMP-dc:Description",
+        "-GPSLatitude",
+        "-GPSLongitude",
+        "-EXIF:GPSAltitude#",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"exiftool read failed: {e.stderr}") from e
+    data = json.loads(result.stdout) if result.stdout.strip() else [{}]
+    rec = data[0] if data else {}
+    xmp = XmpFields(
+        subject=_to_list(rec.get("Subject")),
+        hierarchical_subject=_to_list(rec.get("HierarchicalSubject")),
+        description=rec.get("Description"),
+    )
+    if "GPSLatitude" not in rec or "GPSLongitude" not in rec:
+        return xmp, None
+    lat = float(rec["GPSLatitude"])
+    lon = float(rec["GPSLongitude"])
+    if abs(lat) < 0.01 and abs(lon) < 0.01:
+        return xmp, None
+    alt_raw = rec.get("GPSAltitude")
+    altitude = float(alt_raw) if alt_raw is not None else None
+    return xmp, CameraGps(latitude=lat, longitude=lon, altitude=altitude)
+
+
 def write_xmp(path: Path, fields: XmpFields, is_raw: bool) -> None:
     target = _sidecar_path(path) if is_raw else path
     # Repeated `-tag=val` REPLACES list-typed XMP fields atomically; an empty
