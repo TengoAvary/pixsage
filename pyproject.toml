@@ -102,6 +102,7 @@ packages = ["src/pixsage"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
