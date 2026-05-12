@@ -74,3 +74,67 @@ class Registry:
 
     def entries(self) -> Iterator[CatalogEntry]:
         return iter(self._entries)
+
+    def add(
+        self,
+        photoindex_path: str,
+        label: str,
+        image_embedder_signature: str | None,
+        caption_embedder_signature: str | None,
+        enabled: bool = True,
+    ) -> CatalogEntry:
+        """Add a new catalog. Generates an id. Toggled on by default."""
+        import uuid
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        entry = CatalogEntry(
+            id=uuid.uuid4().hex,
+            photoindex_path=photoindex_path,
+            label=label,
+            enabled=enabled,
+            first_seen=now,
+            last_seen=now,
+            image_embedder_signature=image_embedder_signature,
+            caption_embedder_signature=caption_embedder_signature,
+        )
+        self._entries.append(entry)
+        return entry
+
+    def find_by_id(self, id: str) -> CatalogEntry | None:
+        for e in self._entries:
+            if e.id == id:
+                return e
+        return None
+
+    def find_by_photoindex_path(self, path: str) -> CatalogEntry | None:
+        # Compare resolved + normalised paths so /a/./b matches /a/b
+        target = str(Path(path).resolve())
+        for e in self._entries:
+            if str(Path(e.photoindex_path).resolve()) == target:
+                return e
+        return None
+
+    def toggle(self, id: str) -> None:
+        e = self.find_by_id(id)
+        if e is None:
+            raise KeyError(f"no catalog with id {id!r}")
+        e.enabled = not e.enabled
+
+    def rename(self, id: str, label: str) -> None:
+        e = self.find_by_id(id)
+        if e is None:
+            raise KeyError(f"no catalog with id {id!r}")
+        e.label = label
+
+    def remove(self, id: str) -> None:
+        for i, e in enumerate(self._entries):
+            if e.id == id:
+                del self._entries[i]
+                return
+        raise KeyError(f"no catalog with id {id!r}")
+
+    def mark_available(self, id: str, available: bool) -> None:
+        e = self.find_by_id(id)
+        if e is None:
+            raise KeyError(f"no catalog with id {id!r}")
+        e.available = available
