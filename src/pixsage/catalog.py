@@ -197,6 +197,42 @@ class Catalog:
                 (caption, _now(), sha256),
             )
 
+    def set_camera_gps(
+        self,
+        sha256: str,
+        latitude: float,
+        longitude: float,
+        altitude: float | None,
+    ) -> None:
+        """Record the camera-recorded EXIF GPS for a photo.
+
+        Distinct from `user_locations` (HITL-applied) and `geo_predictions`
+        (GeoCLIP guesses) — this is the original signal from the camera.
+        """
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE photos
+                   SET exif_latitude = ?, exif_longitude = ?, exif_altitude = ?
+                 WHERE sha256 = ?
+                """,
+                (latitude, longitude, altitude, sha256),
+            )
+
+    def get_camera_gps(self, sha256: str) -> dict[str, Any] | None:
+        cur = self._conn.execute(
+            "SELECT exif_latitude, exif_longitude, exif_altitude FROM photos WHERE sha256 = ?",
+            (sha256,),
+        )
+        row = cur.fetchone()
+        if row is None or row["exif_latitude"] is None:
+            return None
+        return {
+            "latitude": float(row["exif_latitude"]),
+            "longitude": float(row["exif_longitude"]),
+            "altitude": float(row["exif_altitude"]) if row["exif_altitude"] is not None else None,
+        }
+
     def iter_photos_for_embedding(self, include_errored: bool = False) -> Iterator[dict[str, Any]]:
         """Yield rows {sha256, current_path, caption, caption_updated_at} for every
         photo that's not currently flagged with an error.
