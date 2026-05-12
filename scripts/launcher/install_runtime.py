@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from scripts.launcher.build_runtime import build_runtime
-from scripts.launcher.download_models import download_models
-from scripts.launcher.pbs_targets import TARGETS
+from scripts.launcher.pbs_targets import TARGETS, get_target
 
 
 def canonical_install_path(home_override: Path | None = None) -> Path:
@@ -41,14 +41,36 @@ def install_runtime_via_build(
     install_dir: Path,
     target: str,
     force: bool = False,
+    project_dir: Path | None = None,
 ) -> None:
-    """Invoke build_runtime + download_models into `install_dir`."""
+    """Invoke build_runtime + download_models into `install_dir`.
+
+    Model downloads run via the freshly-extracted runtime python so the
+    bootstrap python this script runs on needs only the stdlib (no
+    huggingface_hub install required).
+    """
     if (install_dir / "python").exists() and not force:
         print(f"Runtime already at {install_dir}; skipping (use --force to reinstall)")
         return
+    project_dir = project_dir or Path(__file__).resolve().parents[2]
     print(f"Installing runtime to: {install_dir}")
-    build_runtime(target_name=target, out_dir=install_dir)
-    download_models(out_dir=install_dir)
+    build_runtime(target_name=target, out_dir=install_dir, project_dir=project_dir)
+
+    python_exe = install_dir / get_target(target).python_relpath
+    env = os.environ.copy()
+    # Runtime site-packages holds huggingface_hub (via [serve] → transformers);
+    # project_dir on PYTHONPATH lets the subprocess find scripts.launcher.*.
+    env["PYTHONPATH"] = os.pathsep.join([
+        str(install_dir / "site-packages"),
+        str(project_dir),
+    ])
+    env["PYTHONNOUSERSITE"] = "1"
+    subprocess.run(
+        [str(python_exe), "-m", "scripts.launcher.download_models",
+         "--out", str(install_dir)],
+        env=env,
+        check=True,
+    )
     print(f"\nRuntime ready at: {install_dir}")
 
 

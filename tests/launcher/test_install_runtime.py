@@ -17,26 +17,42 @@ def test_install_paths_match_canonical(tmp_path: Path, monkeypatch) -> None:
     assert mac_path == tmp_path / "Library" / "Application Support" / "pixsage"
 
 
-def test_install_runtime_calls_build_and_download(tmp_path: Path) -> None:
+def test_install_runtime_calls_build_then_downloads_via_runtime_python(tmp_path: Path) -> None:
+    """install_runtime should (1) call build_runtime, then (2) subprocess the
+    runtime python to download models — so the bootstrap python doesn't need
+    huggingface_hub installed."""
     from scripts.launcher.install_runtime import install_runtime_via_build
 
-    captured = {}
+    captured: dict = {}
 
     def fake_build(target_name, out_dir, **kwargs):
         captured["build_target"] = target_name
         captured["build_out"] = out_dir
+        # Mimic the real layout so install_runtime can locate python_exe.
+        (out_dir / "python").mkdir(parents=True, exist_ok=True)
         return out_dir / "python" / "python.exe"
 
-    def fake_download(out_dir):
-        captured["download_out"] = out_dir
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["env"] = kwargs.get("env", {})
+        class R:
+            returncode = 0
+        return R()
 
     with patch("scripts.launcher.install_runtime.build_runtime", side_effect=fake_build), \
-         patch("scripts.launcher.install_runtime.download_models", side_effect=fake_download):
+         patch("scripts.launcher.install_runtime.subprocess.run", side_effect=fake_run):
         install_runtime_via_build(install_dir=tmp_path / "install", target="windows-x64")
 
     assert captured["build_target"] == "windows-x64"
     assert captured["build_out"] == tmp_path / "install"
-    assert captured["download_out"] == tmp_path / "install"
+    cmd = captured["cmd"]
+    # The runtime python (not sys.executable) is invoked
+    assert "windows-x64" in str(cmd[0]) or cmd[0].endswith(("python.exe", "python3"))
+    assert cmd[1:5] == ["-m", "scripts.launcher.download_models", "--out", str(tmp_path / "install")]
+    env = captured["env"]
+    assert "PYTHONPATH" in env
+    assert str(tmp_path / "install" / "site-packages") in env["PYTHONPATH"]
+    assert env.get("PYTHONNOUSERSITE") == "1"
 
 
 def test_install_runtime_skips_when_already_present(tmp_path: Path) -> None:
@@ -47,8 +63,8 @@ def test_install_runtime_skips_when_already_present(tmp_path: Path) -> None:
     (install_dir / "python").mkdir(parents=True)
 
     with patch("scripts.launcher.install_runtime.build_runtime") as build, \
-         patch("scripts.launcher.install_runtime.download_models") as dl:
+         patch("scripts.launcher.install_runtime.subprocess.run") as run:
         install_runtime_via_build(install_dir=install_dir, target="windows-x64", force=False)
 
     build.assert_not_called()
-    dl.assert_not_called()
+    run.assert_not_called()
