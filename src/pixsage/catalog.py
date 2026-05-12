@@ -490,18 +490,27 @@ class Catalog:
             yield dict(row)
 
     def iter_photos_for_geolocation(
-        self, include_errored: bool = False
+        self,
+        include_errored: bool = False,
+        include_with_camera_gps: bool = False,
     ) -> Iterator[dict[str, Any]]:
         """Yield {sha256, current_path} for photos the geolocator should consider.
 
-        Errored photos are excluded by default so a corpus-wide run skips known-bad
-        photos. Pass include_errored=True (e.g. when --force is set) to retry them.
+        By default skips photos that already have real GPS (EXIF or HITL-applied).
+        Pass `include_with_camera_gps=True` (mapped from `geolocate --all`) to run
+        predictions on every photo regardless of existing GPS — useful for
+        benchmarking GeoCLIP against ground truth.
+
+        Errored photos are excluded by default; pass `include_errored=True` to
+        retry them (mapped from `--force`).
         """
-        if include_errored:
-            cur = self._conn.execute("SELECT sha256, current_path FROM photos")
-        else:
-            cur = self._conn.execute(
-                "SELECT sha256, current_path FROM photos WHERE error_reason IS NULL"
-            )
+        clauses: list[str] = []
+        if not include_errored:
+            clauses.append("error_reason IS NULL")
+        if not include_with_camera_gps:
+            clauses.append("exif_latitude IS NULL")
+            clauses.append("sha256 NOT IN (SELECT sha256 FROM user_locations)")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        cur = self._conn.execute(f"SELECT sha256, current_path FROM photos{where}")
         for row in cur:
             yield dict(row)
