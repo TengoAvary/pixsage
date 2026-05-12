@@ -71,3 +71,45 @@ def test_set_camera_gps_accepts_no_altitude(tmp_path: Path):
     got = cat.get_camera_gps("sha1")
     assert got == {"latitude": 1.0, "longitude": 2.0, "altitude": None}
     cat.close()
+
+
+def test_iter_geolocation_skips_photos_with_camera_gps(tmp_path: Path):
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    for sha in ("sha-has-gps", "sha-no-gps"):
+        p = tmp_path / f"{sha}.jpg"
+        p.write_bytes(b"\x00")
+        cat.upsert_photo(sha, p, filesize=1, mtime=0.0)
+    cat.set_camera_gps("sha-has-gps", latitude=10.0, longitude=20.0, altitude=None)
+
+    yielded = {r["sha256"] for r in cat.iter_photos_for_geolocation()}
+    assert yielded == {"sha-no-gps"}
+    cat.close()
+
+
+def test_iter_geolocation_skips_photos_with_user_location(tmp_path: Path):
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    for sha in ("sha-user-loc", "sha-no-loc"):
+        p = tmp_path / f"{sha}.jpg"
+        p.write_bytes(b"\x00")
+        cat.upsert_photo(sha, p, filesize=1, mtime=0.0)
+    cat.record_user_location("sha-user-loc", 10.0, 20.0, "Test", "manual")
+
+    yielded = {r["sha256"] for r in cat.iter_photos_for_geolocation()}
+    assert yielded == {"sha-no-loc"}
+    cat.close()
+
+
+def test_iter_geolocation_include_with_camera_gps_returns_all(tmp_path: Path):
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    for sha in ("sha-has-gps", "sha-no-gps"):
+        p = tmp_path / f"{sha}.jpg"
+        p.write_bytes(b"\x00")
+        cat.upsert_photo(sha, p, filesize=1, mtime=0.0)
+    cat.set_camera_gps("sha-has-gps", latitude=10.0, longitude=20.0, altitude=None)
+
+    yielded = {r["sha256"] for r in cat.iter_photos_for_geolocation(include_with_camera_gps=True)}
+    assert yielded == {"sha-has-gps", "sha-no-gps"}
+    cat.close()
