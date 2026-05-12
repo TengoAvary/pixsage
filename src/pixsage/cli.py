@@ -15,7 +15,7 @@ from pixsage.images import load_image
 from pixsage.taggers.base import Tag, Tagger, TagResult
 from pixsage.vocabulary import filter_tags
 from pixsage.walker import sample_paths, sha256_file, walk_photos
-from pixsage.xmp import XmpFields, merge_xmp, needs_sidecar, read_xmp, write_xmp
+from pixsage.xmp import CameraGps, XmpFields, merge_xmp, needs_sidecar, read_metadata, read_xmp, write_xmp
 
 app = typer.Typer(help="pixsage — Tier 1 photo auto-tagger")
 
@@ -194,7 +194,7 @@ def tag(
                 dupe_writes += 1
 
             filtered_tags, caption = sha_to_tags[sha]
-            new_sha = _apply_to_path(
+            new_sha, camera_gps = _apply_to_path(
                 path=path,
                 sha=sha,
                 is_raw=needs_sidecar(path),
@@ -208,6 +208,13 @@ def tag(
                 rewrite=rewrite,
                 sha_prior_strip=sha_prior_strip,
             )
+            if not dry_run and camera_gps is not None:
+                cat.set_camera_gps(
+                    new_sha,
+                    latitude=camera_gps.latitude,
+                    longitude=camera_gps.longitude,
+                    altitude=camera_gps.altitude,
+                )
             if new_sha != sha:
                 sha_to_tags[new_sha] = sha_to_tags[sha]
                 seen_shas_this_run.add(new_sha)
@@ -397,15 +404,15 @@ def _apply_to_path(
     dry_run: bool,
     rewrite: bool,
     sha_prior_strip: dict[str, list[Tag]],
-) -> str:
+) -> tuple[str, CameraGps | None]:
     """Per-path: read existing XMP, merge with the cached auto-tags+caption,
-    write XMP, update the catalog. Returns the (possibly rekeyed) sha.
+    write XMP, update the catalog. Returns (possibly rekeyed sha, camera GPS).
 
     Only the FIRST path for a sha runs flag_user_rejections (the surviving-XMP
     set is meaningful for the path that previously held our auto-tags; on a
     fresh dupe path with empty XMP we'd otherwise mark every tag rejected).
     """
-    existing = read_xmp(path, is_raw=is_raw)
+    existing, camera_gps = read_metadata(path, is_raw=is_raw)
 
     if rewrite:
         if is_first_for_sha:
@@ -449,7 +456,7 @@ def _apply_to_path(
         if merged.description:
             cat.record_caption(sha, merged.description)
 
-    return sha
+    return sha, camera_gps
 
 
 def _is_legacy_marker(s: str) -> bool:
