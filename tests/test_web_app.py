@@ -15,7 +15,12 @@ def test_index_returns_search_page(tmp_path: Path):
     photo_root.mkdir()
     (photo_root / ".photoindex").mkdir()
 
-    app = build_app(photo_root=photo_root, embedder_name="mock")
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
@@ -30,7 +35,12 @@ def test_static_assets_served(tmp_path: Path):
     photo_root.mkdir()
     (photo_root / ".photoindex").mkdir()
 
-    app = build_app(photo_root=photo_root, embedder_name="mock")
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/static/htmx.min.js")
         assert r.status_code == 200

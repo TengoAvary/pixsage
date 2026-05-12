@@ -35,7 +35,16 @@ def _make_corpus(tmp_path: Path) -> Path:
 
 
 def _build_app_with_fake_clusters(photo_root: Path):
-    app = build_app(photo_root, embedder_name="mock", experimental_cluster_labelling=True)
+    # Isolate per-test registry + skip discovery so the global registry path
+    # doesn't leak state between tests.
+    registry_path = photo_root.parent / "catalogs.json"
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=registry_path,
+        embedder_name="mock",
+        experimental_cluster_labelling=True,
+        skip_discovery=True,
+    )
     cat = app.state.catalog
     shas = [r["sha256"] for r in cat._conn.execute(  # noqa: SLF001
         "SELECT sha256 FROM photos ORDER BY filename"
@@ -119,7 +128,12 @@ def test_label_apply_writes_catalog_and_xmp(tmp_path: Path):
 def test_cluster_routes_404_when_flag_off(tmp_path: Path):
     """The default `pixsage serve` invocation must not expose these routes."""
     photo_root = _make_corpus(tmp_path)
-    app = build_app(photo_root, embedder_name="mock")  # flag off by default
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )  # flag off by default
     client = TestClient(app)
     assert client.get("/explore").status_code == 404
     assert client.get("/cluster/42").status_code == 404

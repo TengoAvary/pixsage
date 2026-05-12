@@ -19,9 +19,16 @@ def test_serve_help_lists_options():
     assert "--embedder" in result.output
 
 
-def test_serve_errors_when_no_catalog(tmp_path: Path):
-    photo_root = tmp_path / "photos"
-    photo_root.mkdir()
-    result = runner.invoke(app, ["serve", str(photo_root), "--no-open"])
+def test_serve_help_mentions_registry():
+    """Multi-catalog serve exposes a --registry override and accepts no path."""
+    result = runner.invoke(app, ["serve", "--help"])
+    assert result.exit_code == 0
+    assert "--registry" in result.output
+
+
+def test_serve_rejects_nonexistent_path(tmp_path: Path):
+    """Passing an explicit photo_root that doesn't exist still errors."""
+    missing = tmp_path / "nope"
+    result = runner.invoke(app, ["serve", str(missing), "--no-open"])
     assert result.exit_code != 0
-    assert "no catalog" in result.output.lower() or "catalog" in result.output.lower()
+    assert "does not exist" in result.output.lower() or "no such" in result.output.lower()

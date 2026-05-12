@@ -50,7 +50,12 @@ def test_search_returns_results_html(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/", params={"q": "a red square", "image_weight": "0.0"})
         assert r.status_code == 200
@@ -62,7 +67,12 @@ def test_search_empty_query_returns_empty_results(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/", params={"q": "", "image_weight": "0.5"})
         assert r.status_code == 200
@@ -74,7 +84,12 @@ def test_thumb_route_returns_jpeg(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/thumb/sha-a?size=small")
         assert r.status_code == 200
@@ -86,7 +101,12 @@ def test_thumb_route_404_for_missing_sha(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/thumb/nonexistent-sha?size=small")
         assert r.status_code == 404
@@ -96,7 +116,12 @@ def test_photo_detail_renders_caption_and_filename(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/photo/sha-a")
         assert r.status_code == 200
@@ -109,7 +134,12 @@ def test_photo_detail_404(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/photo/nonexistent-sha")
         assert r.status_code == 404
@@ -119,7 +149,12 @@ def test_similar_returns_results_excluding_self(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/similar/sha-a")
         assert r.status_code == 200
@@ -133,7 +168,12 @@ def test_similar_404_when_photo_missing(tmp_path: Path):
     from pixsage.web.app import build_app
 
     root = _seed_root(tmp_path)
-    app = build_app(photo_root=root, embedder_name="mock")
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     with TestClient(app) as client:
         r = client.get("/similar/nonexistent")
         assert r.status_code == 404

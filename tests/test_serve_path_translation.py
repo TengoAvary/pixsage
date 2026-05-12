@@ -27,7 +27,12 @@ def test_app_state_has_path_resolver(tmp_path: Path) -> None:
     cat.set_photo_root_if_unset(Path(r"E:\Sony alpha 7c"))
     cat.close()
 
-    app = build_app(photo_root=photo_root, embedder_name="mock")
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     resolver = app.state.path_resolver
     # Translation: stored prefix E:\Sony alpha 7c → runtime tmp_path/drive/Sony alpha 7c
     target = photo_root / "DSC_1234.ARW"
@@ -62,7 +67,12 @@ def test_thumb_route_resolves_translated_path(tmp_path: Path) -> None:
     cat._conn.commit()
     cat.close()
 
-    app = build_app(photo_root=photo_root, embedder_name="mock")
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     client = TestClient(app)
     r = client.get("/thumb/abc123?size=small")
     assert r.status_code == 200, r.text
@@ -95,7 +105,12 @@ def test_serves_legacy_catalog_without_photo_root_meta(tmp_path: Path) -> None:
     cat._conn.commit()
     cat.close()
 
-    app = build_app(photo_root=photo_root, embedder_name="mock")
+    app = build_app(
+        photo_root=photo_root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
     client = TestClient(app)
     r = client.get("/thumb/legacy1?size=small")
     assert r.status_code == 200, r.text

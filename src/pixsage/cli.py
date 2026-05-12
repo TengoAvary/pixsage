@@ -586,18 +586,27 @@ def export(
 
 @app.command()
 def serve(
-    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    photo_root: Path | None = typer.Argument(
+        None,
+        exists=False,  # may be omitted; presence checked below
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Optional. Auto-registers this folder's catalog on startup.",
+    ),
     embedder: str = typer.Option("siglip2", "--embedder", help="Embedder for query encoding."),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
     no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open a browser."),
-    catalog: Path | None = typer.Option(None, "--catalog"),
+    registry: Path | None = typer.Option(None, "--registry", help="Override registry path."),
 ) -> None:
-    """Run the search webapp on http://host:port."""
-    photoindex = photo_root / ".photoindex"
-    catalog_path = catalog or (photoindex / "catalog.db")
-    if not catalog_path.exists():
-        typer.echo(f"no catalog at {catalog_path}; run `pixsage tag` then `pixsage embed` first", err=True)
+    """Run the multi-catalog search webapp on http://host:port.
+
+    With no arguments, reads the registry, scans mounted drives, and shows
+    every catalog it knows about. Pass a folder to register it on startup.
+    """
+    if photo_root is not None and not photo_root.exists():
+        typer.echo(f"path does not exist: {photo_root}", err=True)
         raise typer.Exit(code=1)
 
     try:
@@ -607,11 +616,15 @@ def serve(
         raise typer.Exit(code=1)
 
     from pixsage.web.app import build_app
-    fastapi_app = build_app(photo_root=photo_root, embedder_name=embedder, catalog_path=catalog_path)
+    fastapi_app = build_app(
+        photo_root=photo_root,
+        registry_path=registry,
+        embedder_name=embedder,
+    )
 
     if not no_open:
         import webbrowser, threading
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
 
     typer.echo(f"pixsage serve at http://{host}:{port}/")
     uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
