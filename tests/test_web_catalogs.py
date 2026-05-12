@@ -194,3 +194,26 @@ def test_rename_updates_label(tmp_path: Path) -> None:
         reg2 = Registry(registry_path)
         reg2.load()
         assert reg2.find_by_id(e.id).label == "α7c Sony"
+
+
+def test_rescan_picks_up_new_catalog(tmp_path: Path, monkeypatch) -> None:
+    from pixsage.web.app import build_app
+    from pixsage import discovery as discovery_mod
+
+    sony = tmp_path / "Sony"
+    _make_catalog(sony / ".photoindex", photo_root=sony)
+
+    registry_path = tmp_path / "catalogs.json"
+    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+
+    # Stub list_mounted_roots so rescan sees tmp_path as a root.
+    monkeypatch.setattr(discovery_mod, "list_mounted_roots", lambda: [tmp_path])
+
+    with TestClient(app) as client:
+        r = client.post("/catalogs/rescan", follow_redirects=False)
+        assert r.status_code in (302, 303)
+        reg2 = Registry(registry_path)
+        reg2.load()
+        entries = list(reg2.entries())
+        assert len(entries) == 1
+        assert entries[0].label == "Sony"

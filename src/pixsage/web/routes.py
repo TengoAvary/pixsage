@@ -200,6 +200,31 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             multi.remove_catalog(catalog_id)
         return RedirectResponse(url="/", status_code=303)
 
+    @app.post("/catalogs/rescan")
+    def rescan_catalogs() -> RedirectResponse:
+        from pixsage import discovery
+
+        registry = app.state.registry
+        multi = app.state.multi_search
+        pre_ids = {e.id for e in registry.entries()}
+        discovered = discovery.walk_for_photoindex(discovery.list_mounted_roots())
+        registry.refresh_from_discovery(discovered)
+        registry.save()
+
+        # Sync MultiSearchService: load new entries, unload now-offline ones.
+        loaded_ids = set(multi.catalog_ids())
+        for entry in registry.entries():
+            if entry.id not in pre_ids and entry.enabled and entry.available:
+                _load_catalog_into_multi(app, entry)
+            elif entry.id in loaded_ids and not (entry.enabled and entry.available):
+                multi.remove_catalog(entry.id)
+                app.state.catalogs.pop(entry.id, None)
+                app.state.path_resolvers.pop(entry.id, None)
+                app.state.thumbs_by_catalog.pop(entry.id, None)
+                app.state.photoindex_paths.pop(entry.id, None)
+
+        return RedirectResponse(url="/", status_code=303)
+
     @app.get("/similar/{catalog_id}/{sha256}", response_class=HTMLResponse)
     def similar(catalog_id: str, sha256: str, request: Request) -> HTMLResponse:
         config = app.state.config
