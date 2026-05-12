@@ -146,8 +146,13 @@ DEFAULT_IMAGE_SIGNATURE = "siglip2-so400m-patch14-384@v1"
 DEFAULT_CAPTION_SIGNATURE = "minilm-L6-v2@v2"
 
 
-def derive_signatures(photoindex_path: Path) -> tuple[str, str]:
+def derive_signatures(photoindex_path: Path | str) -> tuple[str, str]:
     """Read (image_signature, caption_signature) from a catalog.
+
+    `photoindex_path` is the `.photoindex/` directory; this function looks
+    inside it for `catalog.db` and reads the `image_embedder_signature` /
+    `caption_embedder_signature` meta keys. Falls back to DEFAULT_* if either
+    the file is missing or the meta key is unset.
 
     Order:
     1. Catalog meta keys `image_embedder_signature` / `caption_embedder_signature`

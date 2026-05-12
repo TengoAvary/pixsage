@@ -9,6 +9,7 @@ import numpy as np
 from pixsage.catalog import Catalog
 from pixsage.embedders.base import Embedder
 from pixsage.images import load_image
+from pixsage.registry import DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
 from pixsage.vectors import VectorStore
 from pixsage.xmp import needs_sidecar, read_xmp
 
@@ -139,11 +140,17 @@ class EmbedRunner:
                 else:
                     sys.stderr.write(msg + "\n")
 
-        # Record which embedder version produced these vectors so the registry can
-        # detect cross-catalog mismatch.
-        from pixsage.registry import DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
-        self.catalog.set_meta("image_embedder_signature", DEFAULT_IMAGE_SIGNATURE)
-        self.catalog.set_meta("caption_embedder_signature", DEFAULT_CAPTION_SIGNATURE)
+        # Record which embedder produced these vectors so a future cross-catalog
+        # search can detect mismatched encoders. TODO(multi-embedder): currently
+        # hard-coded to the SigLIP2 + MiniLM defaults — only one embedder ships
+        # today, so this is correct in production. Mock-embedder test runs will
+        # tag their catalogs with these constants too, which is dishonest but
+        # harmless (mock catalogs never cross-search with real-encoder catalogs).
+        # When a second embedder is added, source the signature from
+        # self.embedder.info instead.
+        if stats["processed"] > 0:
+            self.catalog.set_meta("image_embedder_signature", DEFAULT_IMAGE_SIGNATURE)
+            self.catalog.set_meta("caption_embedder_signature", DEFAULT_CAPTION_SIGNATURE)
 
         return stats
 
