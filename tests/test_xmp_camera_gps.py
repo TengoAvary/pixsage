@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from pixsage.config import ensure_default_config, load_config
 from pixsage.xmp import CameraGps, XmpFields, read_camera_gps, read_metadata, write_xmp
 
 EXIFTOOL = shutil.which("exiftool")
@@ -146,3 +147,77 @@ def test_read_metadata_raw_sidecar(tmp_path: Path):
     assert gps is not None
     assert abs(gps.latitude - -1.0) < 1e-3
     assert abs(gps.longitude - 2.0) < 1e-3
+
+
+@needs_exiftool
+def test_apply_to_path_returns_camera_gps(tmp_path: Path):
+    from pixsage.cli import _apply_to_path
+    from pixsage.catalog import Catalog
+    from pixsage.taggers.base import Tag
+
+    cfg_path = tmp_path / "vocabulary.toml"
+    ensure_default_config(cfg_path)
+    config = load_config(cfg_path)
+
+    img = tmp_path / "shot.jpg"
+    Image.new("RGB", (64, 64), color="red").save(img)
+    _inject_exif_gps(img, lat=-52.5, lon=-60.4, alt=30.0)
+
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    cat.upsert_photo("sha1", img, filesize=img.stat().st_size, mtime=img.stat().st_mtime)
+
+    new_sha, gps = _apply_to_path(
+        path=img,
+        sha="sha1",
+        is_raw=False,
+        filtered_tags=[Tag(name="foo", confidence=0.9, hierarchy=None, source="mock")],
+        caption="hello",
+        is_first_for_sha=True,
+        taggers=[],
+        config=config,
+        cat=cat,
+        dry_run=False,
+        rewrite=False,
+        sha_prior_strip={},
+    )
+    assert gps is not None
+    assert abs(gps.latitude - -52.5) < 1e-3
+    assert abs(gps.longitude - -60.4) < 1e-3
+    cat.close()
+
+
+@needs_exiftool
+def test_apply_to_path_returns_none_gps_for_file_without_exif(tmp_path: Path):
+    from pixsage.cli import _apply_to_path
+    from pixsage.catalog import Catalog
+    from pixsage.taggers.base import Tag
+
+    cfg_path = tmp_path / "vocabulary.toml"
+    ensure_default_config(cfg_path)
+    config = load_config(cfg_path)
+
+    img = tmp_path / "shot.jpg"
+    Image.new("RGB", (64, 64), color="red").save(img)
+    # No _inject_exif_gps call — file has no GPS.
+
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    cat.upsert_photo("sha1", img, filesize=img.stat().st_size, mtime=img.stat().st_mtime)
+
+    new_sha, gps = _apply_to_path(
+        path=img,
+        sha="sha1",
+        is_raw=False,
+        filtered_tags=[Tag(name="foo", confidence=0.9, hierarchy=None, source="mock")],
+        caption=None,
+        is_first_for_sha=True,
+        taggers=[],
+        config=config,
+        cat=cat,
+        dry_run=False,
+        rewrite=False,
+        sha_prior_strip={},
+    )
+    assert gps is None
+    cat.close()
