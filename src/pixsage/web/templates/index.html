@@ -10,6 +10,9 @@
     <h1><a href="/">pixsage</a></h1>
   </header>
   <main>
+    {% if registry %}
+      {% include "_catalogs.html" %}
+    {% endif %}
     {% if similar_to %}
       <p><a href="/photo/{{ similar_to.catalog_id }}/{{ similar_to.sha256 }}">← back to {{ similar_to.filename }}</a></p>
       <h2>More like {{ similar_to.filename }}</h2>

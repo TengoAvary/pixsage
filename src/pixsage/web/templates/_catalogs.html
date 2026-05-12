@@ -1,0 +1,37 @@
+{# Catalog manager panel. Rendered above the search form on /. #}
+{% set entries = registry.entries() | list %}
+{% set has_any_enabled = entries | selectattr("enabled") | selectattr("available") | list | length > 0 %}
+<details class="catalogs-panel" {% if not has_any_enabled %}open{% endif %}>
+  <summary>Catalogs ({{ entries | length }})</summary>
+  {% if entries %}
+    <ul class="catalog-list">
+      {% for entry in entries %}
+        <li class="catalog-row" data-catalog-id="{{ entry.id }}">
+          <span class="status-dot status-{% if entry.available %}available{% else %}offline{% endif %}"></span>
+          <span class="label">{{ entry.label }}</span>
+          <span class="path">{{ entry.photoindex_path }}</span>
+          <form method="post" action="/catalogs/{{ entry.id }}/toggle" style="display:inline">
+            <input type="checkbox" name="enabled" {% if entry.enabled %}checked{% endif %}
+                   onchange="this.form.submit()" {% if not entry.available %}disabled{% endif %}>
+          </form>
+          {% if not entry.available %}<span class="offline-tag">offline</span>{% endif %}
+          <form method="post" action="/catalogs/{{ entry.id }}/remove" style="display:inline">
+            <button type="submit" class="remove-btn" title="Remove from registry">&times;</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No catalogs yet. Plug in a drive that contains a <code>.photoindex/</code> folder and click Rescan drives, or paste a path to add one manually.</p>
+  {% endif %}
+
+  <div class="catalogs-actions">
+    <form method="post" action="/catalogs/add" class="add-catalog-form">
+      <input type="text" name="path" placeholder="Paste a path to a folder containing .photoindex/" required>
+      <button type="submit">Add catalog&hellip;</button>
+    </form>
+    <form method="post" action="/catalogs/rescan" style="display:inline">
+      <button type="submit">Rescan drives</button>
+    </form>
+  </div>
+</details>

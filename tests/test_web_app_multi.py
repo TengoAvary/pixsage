@@ -36,8 +36,7 @@ def test_build_app_with_empty_registry_serves_empty_state(tmp_path: Path) -> Non
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
-        # TODO(Task 10): re-enable content assertion after catalog panel ships.
-        # assert "No catalogs" in r.text or "add a catalog" in r.text.lower()
+        assert "No catalogs" in r.text or "add a catalog" in r.text.lower()
 
 
 def test_build_app_with_single_photo_root_auto_registers(tmp_path: Path) -> None:
@@ -56,8 +55,7 @@ def test_build_app_with_single_photo_root_auto_registers(tmp_path: Path) -> None
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
-        # TODO(Task 10): re-enable content assertion after catalog panel ships.
-        # assert "Sony" in r.text
+        assert "Sony" in r.text
 
     # Verify it was actually written to the registry.
     from pixsage.registry import Registry
@@ -103,9 +101,8 @@ def test_build_app_loads_two_catalogs_from_registry(tmp_path: Path) -> None:
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
-        # TODO(Task 10): re-enable content assertions after catalog panel ships.
-        # assert "Sony" in r.text
-        # assert "iPhone" in r.text
+        assert "Sony" in r.text
+        assert "iPhone" in r.text
 
     # Verify both catalogs were loaded into the multi_search.
     assert len(app.state.catalogs) == 2
