@@ -113,3 +113,20 @@ def test_iter_geolocation_include_with_camera_gps_returns_all(tmp_path: Path):
     yielded = {r["sha256"] for r in cat.iter_photos_for_geolocation(include_with_camera_gps=True)}
     assert yielded == {"sha-has-gps", "sha-no-gps"}
     cat.close()
+
+
+def test_iter_geolocation_include_with_camera_gps_also_returns_user_location_photos(tmp_path: Path):
+    """`include_with_camera_gps=True` lifts BOTH the EXIF and the user_locations
+    skip clauses — the kwarg name names only one but the contract covers both,
+    matching the `geolocate --all` CLI flag's documented behavior."""
+    cat = Catalog(tmp_path / "catalog.db")
+    cat.init_schema()
+    for sha in ("sha-user-loc", "sha-no-loc"):
+        p = tmp_path / f"{sha}.jpg"
+        p.write_bytes(b"\x00")
+        cat.upsert_photo(sha, p, filesize=1, mtime=0.0)
+    cat.record_user_location("sha-user-loc", 10.0, 20.0, "Test", "manual")
+
+    yielded = {r["sha256"] for r in cat.iter_photos_for_geolocation(include_with_camera_gps=True)}
+    assert yielded == {"sha-user-loc", "sha-no-loc"}
+    cat.close()

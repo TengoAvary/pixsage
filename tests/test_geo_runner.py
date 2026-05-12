@@ -95,7 +95,7 @@ def test_runner_replaces_predictions_on_force(catalog: Catalog, tmp_path: Path):
 
 def test_runner_skips_photos_with_camera_gps_by_default(catalog: Catalog, tmp_path: Path):
     _seed_photo(catalog, "sha-no-gps", tmp_path, name="a.jpg")
-    img_with_gps = _seed_photo(catalog, "sha-has-gps", tmp_path, name="b.jpg")
+    _seed_photo(catalog, "sha-has-gps", tmp_path, name="b.jpg")
     catalog.set_camera_gps("sha-has-gps", latitude=10.0, longitude=20.0, altitude=None)
 
     GeoRunner(catalog=catalog, geolocator=MockGeolocator(top_k=2)).run()
