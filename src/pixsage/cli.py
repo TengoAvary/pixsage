@@ -523,9 +523,17 @@ def geolocate(
     ),
     top_k: int = typer.Option(5, "--top-k", min=1, help="Number of top GPS predictions to store per photo."),
     force: bool = typer.Option(False, "--force", help="Re-predict photos that already have geo predictions for this model."),
+    all_photos: bool = typer.Option(
+        False, "--all",
+        help="Predict on every photo, including those that already have real GPS (EXIF or user-applied). Default skips them as redundant.",
+    ),
     catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
 ) -> None:
-    """Predict GPS coordinates for each catalogued photo and store the top-K in the catalog.
+    """Predict GPS coordinates for catalogued photos that lack real GPS.
+
+    By default, photos with EXIF GPS or a user-applied location are skipped
+    (running GeoCLIP on them produces guesses that are worse than the truth
+    already in the file). Pass --all to override.
 
     Predictions live in the geo_predictions table and travel with the catalog.db,
     so the analysis machine doesn't need the source photos to read them back.
@@ -546,7 +554,7 @@ def geolocate(
     typer.echo(f"Loading geolocator: {geo.info.name}")
     geo.load(select_device())
 
-    runner = GeoRunner(catalog=cat, geolocator=geo, force=force, progress=True)
+    runner = GeoRunner(catalog=cat, geolocator=geo, force=force, progress=True, include_with_camera_gps=all_photos)
     stats = runner.run()
     cat.close()
     typer.echo(f"done. processed={stats['processed']} skipped={stats['skipped']} errored={stats['errored']}")
