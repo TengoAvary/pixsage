@@ -2,26 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>pixsage</title>
+  <title>{% if similar_to %}More like {{ similar_to.filename }} — {% endif %}pixsage</title>
   <link rel="stylesheet" href="/static/style.css" />
-  <script src="/static/htmx.min.js"></script>
 </head>
 <body>
   <header>
-    <h1>pixsage</h1>
+    <h1><a href="/">pixsage</a></h1>
   </header>
   <main>
-    <form id="search-form"
-          hx-post="/search" hx-target="#results" hx-swap="innerHTML">
-      <input type="search" name="q" placeholder="Describe what you want to find…" autofocus />
-      <label>
-        Caption ⇄ Visual
-        <input type="range" name="image_weight" min="0" max="1" step="0.05"
-               value="{{ default_image_weight }}" />
-      </label>
-      <button type="submit">Search</button>
-    </form>
-    <section id="results"></section>
+    {% if similar_to %}
+      <p><a href="/photo/{{ similar_to.sha256 }}">← back to {{ similar_to.filename }}</a></p>
+      <h2>More like {{ similar_to.filename }}</h2>
+    {% else %}
+      <form id="search-form" method="get" action="/">
+        <input type="search" name="q" placeholder="Describe what you want to find…"
+               value="{{ query or '' }}" autofocus />
+        <label>
+          Caption ⇄ Visual
+          <input type="range" name="image_weight" min="0" max="1" step="0.05"
+                 value="{{ default_image_weight }}" />
+        </label>
+        <button type="submit">Search</button>
+      </form>
+    {% endif %}
+    <section id="results">
+      {% if hits is not none %}
+        {% include "_results.html" %}
+      {% endif %}
+    </section>
   </main>
 </body>
 </html>

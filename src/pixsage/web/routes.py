@@ -17,53 +17,41 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
     the why-it-exists / why-it's-disabled context.
     """
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
-        templates = app.state.templates
-        config = app.state.config
-        return templates.TemplateResponse(
-            request,
-            "index.html",
-            {
-                "default_image_weight": config.search.default_image_weight,
-            },
-        )
-
-    @app.post("/search", response_class=HTMLResponse)
-    def search(
+    def index(
         request: Request,
-        q: str = Form(""),
-        image_weight: float = Form(0.5),
+        q: str = "",
+        image_weight: float | None = None,
     ) -> HTMLResponse:
         templates = app.state.templates
         catalog = app.state.catalog
         config = app.state.config
 
-        if not q.strip():
-            return templates.TemplateResponse(
-                request,
-                "_results.html",
-                {"hits": [], "query": q},
-            )
+        if image_weight is None:
+            image_weight = config.search.default_image_weight
 
-        service = app.state.search
-        raw_hits = service.search(q, image_weight=image_weight, top_k=config.search.top_k)
-
-        # Enrich each hit with current_path + filename for the card template.
-        hits = []
-        for h in raw_hits:
-            row = catalog.get_photo(h.sha256)
-            if row is None:
-                continue
-            hits.append({
-                "sha256": h.sha256,
-                "score": h.score,
-                "filename": Path(row["current_path"]).name,
-            })
+        hits: list | None = None
+        if q.strip():
+            service = app.state.search
+            raw_hits = service.search(q, image_weight=image_weight, top_k=config.search.top_k)
+            hits = []
+            for h in raw_hits:
+                row = catalog.get_photo(h.sha256)
+                if row is None:
+                    continue
+                hits.append({
+                    "sha256": h.sha256,
+                    "score": h.score,
+                    "filename": Path(row["current_path"]).name,
+                })
 
         return templates.TemplateResponse(
             request,
-            "_results.html",
-            {"hits": hits, "query": q},
+            "index.html",
+            {
+                "default_image_weight": image_weight,
+                "query": q,
+                "hits": hits,
+            },
         )
 
     @app.get("/thumb/{sha256}")
@@ -113,7 +101,8 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         templates = app.state.templates
         service = app.state.search
 
-        if catalog.get_photo(sha256) is None:
+        row = catalog.get_photo(sha256)
+        if row is None:
             raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
 
         raw_hits = service.search_by_image(sha256, top_k=config.search.top_k)
@@ -122,19 +111,25 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             # Exclude the query photo itself
             if h.sha256 == sha256:
                 continue
-            row = catalog.get_photo(h.sha256)
-            if row is None:
+            r = catalog.get_photo(h.sha256)
+            if r is None:
                 continue
             hits.append({
                 "sha256": h.sha256,
                 "score": h.score,
-                "filename": Path(row["current_path"]).name,
+                "filename": Path(r["current_path"]).name,
             })
 
+        filename = Path(row["current_path"]).name if row["current_path"] else "?"
         return templates.TemplateResponse(
             request,
-            "_results.html",
-            {"hits": hits, "query": "similar images"},
+            "index.html",
+            {
+                "default_image_weight": config.search.default_image_weight,
+                "query": "",
+                "hits": hits,
+                "similar_to": {"sha256": sha256, "filename": filename},
+            },
         )
 
     # ─────────────────────────────────────────────────────────────────────
