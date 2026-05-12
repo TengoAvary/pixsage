@@ -46,6 +46,14 @@ def _seed_root(tmp_path: Path) -> Path:
     return root
 
 
+def _catalog_id(client) -> str:
+    """First enabled+available catalog id — the only one in single-catalog tests."""
+    for e in client.app.state.registry.entries():
+        if e.enabled and e.available:
+            return e.id
+    raise AssertionError("no enabled catalog")
+
+
 def test_search_returns_results_html(tmp_path: Path):
     from pixsage.web.app import build_app
 
@@ -91,7 +99,8 @@ def test_thumb_route_returns_jpeg(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/thumb/sha-a?size=small")
+        cid = _catalog_id(client)
+        r = client.get(f"/thumb/{cid}/sha-a?size=small")
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/jpeg"
         assert len(r.content) > 0
@@ -108,7 +117,8 @@ def test_thumb_route_404_for_missing_sha(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/thumb/nonexistent-sha?size=small")
+        cid = _catalog_id(client)
+        r = client.get(f"/thumb/{cid}/nonexistent-sha?size=small")
         assert r.status_code == 404
 
 
@@ -123,11 +133,12 @@ def test_photo_detail_renders_caption_and_filename(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/photo/sha-a")
+        cid = _catalog_id(client)
+        r = client.get(f"/photo/{cid}/sha-a")
         assert r.status_code == 200
         assert "a red square" in r.text          # caption
         assert "a.jpg" in r.text                 # filename
-        assert "/similar/sha-a" in r.text        # more-like-this link
+        assert f"/similar/{cid}/sha-a" in r.text  # more-like-this link
 
 
 def test_photo_detail_404(tmp_path: Path):
@@ -141,7 +152,8 @@ def test_photo_detail_404(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/photo/nonexistent-sha")
+        cid = _catalog_id(client)
+        r = client.get(f"/photo/{cid}/nonexistent-sha")
         assert r.status_code == 404
 
 
@@ -156,7 +168,8 @@ def test_similar_returns_results_excluding_self(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/similar/sha-a")
+        cid = _catalog_id(client)
+        r = client.get(f"/similar/{cid}/sha-a")
         assert r.status_code == 200
         # The query photo's own card must not be in the results grid;
         # the other photo's card must be.
@@ -175,5 +188,6 @@ def test_similar_404_when_photo_missing(tmp_path: Path):
         skip_discovery=True,
     )
     with TestClient(app) as client:
-        r = client.get("/similar/nonexistent")
+        cid = _catalog_id(client)
+        r = client.get(f"/similar/{cid}/nonexistent")
         assert r.status_code == 404

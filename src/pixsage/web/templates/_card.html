@@ -1,6 +1,6 @@
 <article class="card" data-sha="{{ hit.sha256 }}">
-  <a href="/photo/{{ hit.sha256 }}">
-    <img src="/thumb/{{ hit.sha256 }}?size=medium" alt="{{ hit.filename }}" loading="lazy" />
+  <a href="/photo/{{ hit.catalog_id }}/{{ hit.sha256 }}">
+    <img src="/thumb/{{ hit.catalog_id }}/{{ hit.sha256 }}?size=medium" alt="{{ hit.filename }}" loading="lazy" />
   </a>
   <div class="meta">
     <div class="filename">{{ hit.filename }}</div>

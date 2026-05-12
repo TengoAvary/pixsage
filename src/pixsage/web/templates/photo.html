@@ -12,7 +12,7 @@
   </header>
   <main>
     <div class="photo-detail">
-      <img src="/thumb/{{ sha256 }}?size=large" alt="{{ filename }}" />
+      <img src="/thumb/{{ catalog_id }}/{{ sha256 }}?size=large" alt="{{ filename }}" />
       {% if caption %}
         <p class="caption">{{ caption }}</p>
       {% endif %}
@@ -21,7 +21,7 @@
           {% for t in tags %}<li>{{ t }}</li>{% endfor %}
         </ul>
       {% endif %}
-      <a class="more-like-this" href="/similar/{{ sha256 }}">
+      <a class="more-like-this" href="/similar/{{ catalog_id }}/{{ sha256 }}">
         More like this →
       </a>
     </div>

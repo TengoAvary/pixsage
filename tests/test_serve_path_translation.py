@@ -11,9 +11,16 @@ def _make_jpeg(path: Path, color: str = "red") -> None:
     img.save(path, "JPEG")
 
 
+def _first_catalog_id(app) -> str:
+    for e in app.state.registry.entries():
+        if e.enabled and e.available:
+            return e.id
+    raise AssertionError("no enabled catalog")
+
+
 def test_app_state_has_path_resolver(tmp_path: Path) -> None:
     """build_app constructs a PathResolver from the catalog meta and
-    runtime photo_root, exposed on app.state.path_resolver."""
+    runtime photo_root, exposed on app.state.path_resolvers[catalog_id]."""
     from pixsage.catalog import Catalog
     from pixsage.web.app import build_app
 
@@ -33,7 +40,8 @@ def test_app_state_has_path_resolver(tmp_path: Path) -> None:
         embedder_name="mock",
         skip_discovery=True,
     )
-    resolver = app.state.path_resolver
+    cid = _first_catalog_id(app)
+    resolver = app.state.path_resolvers[cid]
     # Translation: stored prefix E:\Sony alpha 7c → runtime tmp_path/drive/Sony alpha 7c
     target = photo_root / "DSC_1234.ARW"
     target.write_bytes(b"raw")
@@ -44,7 +52,7 @@ def test_app_state_has_path_resolver(tmp_path: Path) -> None:
 def test_thumb_route_resolves_translated_path(tmp_path: Path) -> None:
     """Catalog has a current_path of E:\\Sony alpha 7c\\DSC_0001.JPG,
     file actually lives at tmp_path/drive/Sony alpha 7c/DSC_0001.JPG.
-    /thumb/<sha> should serve it."""
+    /thumb/<cid>/<sha> should serve it."""
     from pixsage.catalog import Catalog
     from pixsage.web.app import build_app
 
@@ -73,8 +81,9 @@ def test_thumb_route_resolves_translated_path(tmp_path: Path) -> None:
         embedder_name="mock",
         skip_discovery=True,
     )
+    cid = _first_catalog_id(app)
     client = TestClient(app)
-    r = client.get("/thumb/abc123?size=small")
+    r = client.get(f"/thumb/{cid}/abc123?size=small")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("image/")
 
@@ -111,6 +120,7 @@ def test_serves_legacy_catalog_without_photo_root_meta(tmp_path: Path) -> None:
         embedder_name="mock",
         skip_discovery=True,
     )
+    cid = _first_catalog_id(app)
     client = TestClient(app)
-    r = client.get("/thumb/legacy1?size=small")
+    r = client.get(f"/thumb/{cid}/legacy1?size=small")
     assert r.status_code == 200, r.text

@@ -11,7 +11,7 @@
   </header>
   <main>
     {% if similar_to %}
-      <p><a href="/photo/{{ similar_to.sha256 }}">← back to {{ similar_to.filename }}</a></p>
+      <p><a href="/photo/{{ similar_to.catalog_id }}/{{ similar_to.sha256 }}">← back to {{ similar_to.filename }}</a></p>
       <h2>More like {{ similar_to.filename }}</h2>
     {% else %}
       <form id="search-form" method="get" action="/">

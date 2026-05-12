@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from pixsage.registry import DEFAULT_CAPTION_SIGNATURE, DEFAULT_IMAGE_SIGNATURE
 from pixsage.web.thumbs import ThumbSize
 
 
@@ -23,26 +24,49 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         image_weight: float | None = None,
     ) -> HTMLResponse:
         templates = app.state.templates
-        catalog = app.state.catalog
         config = app.state.config
+        multi = app.state.multi_search
+        registry = app.state.registry
+        catalogs = app.state.catalogs
 
         if image_weight is None:
             image_weight = config.search.default_image_weight
 
+        # Build query signatures — for now, the orchestrator's embedder
+        # signatures are the defaults. If we ever support multiple query
+        # encoders, this changes.
+        q_img_sig = DEFAULT_IMAGE_SIGNATURE
+        q_cap_sig = DEFAULT_CAPTION_SIGNATURE
+
         hits: list | None = None
         if q.strip():
-            service = app.state.search
-            raw_hits = service.search(q, image_weight=image_weight, top_k=config.search.top_k)
+            raw_hits = multi.search(
+                query=q,
+                image_weight=image_weight,
+                top_k=config.search.top_k,
+                query_image_sig=q_img_sig,
+                query_caption_sig=q_cap_sig,
+            )
             hits = []
             for h in raw_hits:
-                row = catalog.get_photo(h.sha256)
+                cat = catalogs.get(h.catalog_id)
+                if cat is None:
+                    continue
+                row = cat.get_photo(h.sha256)
                 if row is None:
                     continue
+                entry = registry.find_by_id(h.catalog_id)
                 hits.append({
                     "sha256": h.sha256,
                     "score": h.score,
                     "filename": Path(row["current_path"]).name,
+                    "catalog_id": h.catalog_id,
+                    "catalog_label": entry.label if entry else "",
                 })
+
+        # Multi-catalog mode is "active" when more than one catalog is enabled;
+        # controls whether result cards show a per-catalog badge.
+        enabled_count = sum(1 for e in registry.entries() if e.enabled and e.available)
 
         return templates.TemplateResponse(
             request,
@@ -51,42 +75,52 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
                 "default_image_weight": image_weight,
                 "query": q,
                 "hits": hits,
+                "registry": registry,
+                "multi_catalog": enabled_count > 1,
             },
         )
 
-    @app.get("/thumb/{sha256}")
-    def thumb(sha256: str, size: str = "medium") -> FileResponse:
+    @app.get("/thumb/{catalog_id}/{sha256}")
+    def thumb(catalog_id: str, sha256: str, size: str = "medium") -> FileResponse:
         try:
             thumb_size = ThumbSize(size)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"unknown size {size!r}")
 
-        catalog = app.state.catalog
-        row = catalog.get_photo(sha256)
+        catalogs = app.state.catalogs
+        thumbs = app.state.thumbs_by_catalog
+        resolvers = app.state.path_resolvers
+
+        cat = catalogs.get(catalog_id)
+        if cat is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        row = cat.get_photo(sha256)
         if row is None or row["current_path"] is None:
             raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
 
-        resolver = app.state.path_resolver
-        source = resolver.resolve(row["current_path"])
+        source = resolvers[catalog_id].resolve(row["current_path"])
         if not source.exists():
             raise HTTPException(status_code=404, detail=f"source missing on disk: {source}")
 
-        thumbs = app.state.thumbs
-        path = thumbs.get_or_create(sha256, source, thumb_size)
+        path = thumbs[catalog_id].get_or_create(sha256, source, thumb_size)
         return FileResponse(path, media_type="image/jpeg")
 
-    @app.get("/photo/{sha256}", response_class=HTMLResponse)
-    def photo(request: Request, sha256: str) -> HTMLResponse:
-        catalog = app.state.catalog
-        row = catalog.get_photo(sha256)
+    @app.get("/photo/{catalog_id}/{sha256}", response_class=HTMLResponse)
+    def photo(catalog_id: str, sha256: str, request: Request) -> HTMLResponse:
+        catalogs = app.state.catalogs
+        cat = catalogs.get(catalog_id)
+        if cat is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        row = cat.get_photo(sha256)
         if row is None:
             raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
 
-        tags = catalog.get_tags(sha256)
+        tags = cat.get_tags(sha256)
         return app.state.templates.TemplateResponse(
             request,
             "photo.html",
             {
+                "catalog_id": catalog_id,
                 "sha256": sha256,
                 "filename": Path(row["current_path"]).name if row["current_path"] else "?",
                 "caption": row["caption"],
@@ -94,33 +128,45 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             },
         )
 
-    @app.get("/similar/{sha256}", response_class=HTMLResponse)
-    def similar(request: Request, sha256: str) -> HTMLResponse:
-        catalog = app.state.catalog
+    @app.get("/similar/{catalog_id}/{sha256}", response_class=HTMLResponse)
+    def similar(catalog_id: str, sha256: str, request: Request) -> HTMLResponse:
         config = app.state.config
         templates = app.state.templates
-        service = app.state.search
+        multi = app.state.multi_search
+        registry = app.state.registry
+        catalogs = app.state.catalogs
 
-        row = catalog.get_photo(sha256)
+        cat = catalogs.get(catalog_id)
+        if cat is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        row = cat.get_photo(sha256)
         if row is None:
             raise HTTPException(status_code=404, detail=f"no photo for sha {sha256!r}")
 
-        raw_hits = service.search_by_image(sha256, top_k=config.search.top_k)
+        raw_hits = multi.search_by_image(
+            catalog_id=catalog_id, sha256=sha256, top_k=config.search.top_k
+        )
         hits = []
         for h in raw_hits:
-            # Exclude the query photo itself
+            # Defensive: search_by_image already excludes the query photo, but
+            # filtering here keeps the route honest if that ever changes.
             if h.sha256 == sha256:
                 continue
-            r = catalog.get_photo(h.sha256)
+            r = cat.get_photo(h.sha256)
             if r is None:
                 continue
+            entry = registry.find_by_id(h.catalog_id)
             hits.append({
                 "sha256": h.sha256,
                 "score": h.score,
                 "filename": Path(r["current_path"]).name,
+                "catalog_id": h.catalog_id,
+                "catalog_label": entry.label if entry else "",
             })
 
         filename = Path(row["current_path"]).name if row["current_path"] else "?"
+        enabled_count = sum(1 for e in registry.entries() if e.enabled and e.available)
+
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -128,7 +174,13 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
                 "default_image_weight": config.search.default_image_weight,
                 "query": "",
                 "hits": hits,
-                "similar_to": {"sha256": sha256, "filename": filename},
+                "similar_to": {
+                    "sha256": sha256,
+                    "catalog_id": catalog_id,
+                    "filename": filename,
+                },
+                "registry": registry,
+                "multi_catalog": enabled_count > 1,
             },
         )
 
@@ -156,16 +208,30 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
     #   this whole block (and the corresponding templates / tests / catalog
     #   table) is a one-commit operation later.
     #
+    # Single-catalog assumption:
+    #   Clustering is per-catalog; the experimental routes pick the first
+    #   loaded catalog. Real multi-catalog cluster labelling would need a
+    #   /explore/{catalog_id} shape — out of scope while the feature is off.
+    #
     # Enable for testing/exploration: build_app(..., experimental_cluster_labelling=True).
     # ─────────────────────────────────────────────────────────────────────
     if not experimental_cluster_labelling:
         return
 
+    def _first_catalog():
+        """Return (catalog_id, Catalog, photoindex_path) for the first loaded
+        catalog, or raise 404. Cluster routes are inherently single-catalog."""
+        catalogs = app.state.catalogs
+        if not catalogs:
+            raise HTTPException(status_code=404, detail="no catalogs loaded")
+        cid = next(iter(catalogs))
+        return cid, catalogs[cid], app.state.photoindex_paths[cid]
+
     @app.get("/explore", response_class=HTMLResponse)
     def explore(request: Request) -> HTMLResponse:
         """Cluster grid for HITL location labelling. Experimental — see comment above."""
+        _, catalog, _ = _first_catalog()
         clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
         cluster_views = []
         for c in clusters:
             label = _cluster_label_summary(c, catalog)
@@ -184,8 +250,8 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
 
     @app.get("/cluster/{cluster_id}", response_class=HTMLResponse)
     def cluster_detail(request: Request, cluster_id: int) -> HTMLResponse:
+        _, catalog, _ = _first_catalog()
         clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
         cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
         if cluster is None:
             raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
@@ -213,8 +279,9 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         """Apply a (lat, lon, place_name) label to every photo in this cluster.
         Writes XMP GPS + IPTC sublocation, records in user_locations table."""
         from pixsage.xmp import needs_sidecar, write_gps
+        cat_id, catalog, _ = _first_catalog()
+        resolver = app.state.path_resolvers[cat_id]
         clusters = _get_or_compute_clusters(app)
-        catalog = app.state.catalog
         cluster = next((c for c in clusters if c.cluster_id == cluster_id), None)
         if cluster is None:
             raise HTTPException(status_code=404, detail=f"no cluster {cluster_id}")
@@ -224,7 +291,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             row = catalog.get_photo(sha)
             if row is None or not row["current_path"]:
                 continue
-            path = app.state.path_resolver.resolve(row["current_path"])
+            path = resolver.resolve(row["current_path"])
             if not path.exists():
                 continue
             try:
@@ -250,8 +317,14 @@ def _get_or_compute_clusters(app):
     from pixsage.analysis import load_export
     from pixsage.clusters import compute_clusters
 
-    photo_root = app.state.photo_root
-    export = load_export(photo_root / ".photoindex")
+    catalogs = app.state.catalogs
+    if not catalogs:
+        app.state.clusters = []
+        return []
+    first_id = next(iter(catalogs))
+    photoindex = app.state.photoindex_paths[first_id]
+    photo_root = photoindex.parent
+    export = load_export(photoindex)
     shas, mats = export.aligned_matrices(require=("image_vec",))
     if len(shas) == 0:
         app.state.clusters = []

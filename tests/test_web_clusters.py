@@ -45,7 +45,7 @@ def _build_app_with_fake_clusters(photo_root: Path):
         experimental_cluster_labelling=True,
         skip_discovery=True,
     )
-    cat = app.state.catalog
+    cat = next(iter(app.state.catalogs.values()))
     shas = [r["sha256"] for r in cat._conn.execute(  # noqa: SLF001
         "SELECT sha256 FROM photos ORDER BY filename"
     )]
@@ -116,7 +116,7 @@ def test_label_apply_writes_catalog_and_xmp(tmp_path: Path):
         assert is_raw is False  # JPGs
 
     # And every photo has a catalog row
-    cat = app.state.catalog
+    cat = next(iter(app.state.catalogs.values()))
     for sha in shas:
         loc = cat.get_user_location(sha)
         assert loc is not None
@@ -152,7 +152,7 @@ def test_label_apply_with_no_place_name(tmp_path: Path):
             data={"latitude": 0.0, "longitude": 0.0, "place_name": ""},
         )
 
-    cat = app.state.catalog
+    cat = next(iter(app.state.catalogs.values()))
     for sha in shas:
         loc = cat.get_user_location(sha)
         assert loc is not None

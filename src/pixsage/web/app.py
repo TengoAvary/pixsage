@@ -52,7 +52,6 @@ def build_app(
     registry_path: Path | None = None,
     embedder_name: str = "siglip2",
     *,
-    catalog_path: Path | None = None,
     experimental_cluster_labelling: bool = False,
     skip_discovery: bool = False,
 ) -> FastAPI:
@@ -63,9 +62,6 @@ def build_app(
             registry (backward compat with the per-folder launcher model).
         registry_path: Override for the catalogs.json location.
         embedder_name: Which embedder to use for query encoding.
-        catalog_path: Deprecated single-catalog override, accepted for
-            backward compat with the old `serve --catalog` flag. Ignored if
-            registry-driven (a non-None registry_path always wins).
         experimental_cluster_labelling: Off by default. See routes.py.
         skip_discovery: If True, don't scan mounted drives on startup.
             Useful in tests to avoid touching /Volumes/.
@@ -157,7 +153,7 @@ def build_app(
     app = FastAPI(title="pixsage")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    # Multi-catalog state — Task 9 will rewrite the routes to consume these.
+    # Multi-catalog state — routes consume these dicts directly.
     app.state.registry = registry
     app.state.registry_path = registry_path
     app.state.multi_search = multi
@@ -168,28 +164,6 @@ def build_app(
     app.state.photoindex_paths = photoindex_paths  # dict {catalog_id: Path}
     app.state.config = config
     app.state.templates = templates
-
-    # Backward-compat shim: existing routes (pre-Task 9) read scalars like
-    # app.state.catalog, app.state.search, app.state.thumbs,
-    # app.state.path_resolver, app.state.photo_root. When exactly one catalog
-    # is loaded we expose them so the existing route handlers and the
-    # test_web_search.py suite keep working until Task 9 lands.
-    if len(catalogs) == 1:
-        only_id = next(iter(catalogs))
-        app.state.catalog = catalogs[only_id]
-        app.state.thumbs = thumbs[only_id]
-        app.state.path_resolver = resolvers[only_id]
-        app.state.photo_root = photoindex_paths[only_id].parent
-        # MultiSearchService stores the underlying per-catalog SearchService.
-        app.state.search = multi._catalogs[only_id].service
-        app.state.vectors = VectorStore(photoindex_paths[only_id] / "vectors")
-    else:
-        app.state.catalog = None
-        app.state.thumbs = None
-        app.state.path_resolver = None
-        app.state.photo_root = None
-        app.state.search = None
-        app.state.vectors = None
 
     from pixsage.web import routes
     routes.register(app, experimental_cluster_labelling=experimental_cluster_labelling)
