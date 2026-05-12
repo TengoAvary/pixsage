@@ -191,9 +191,15 @@ def read_camera_gps(path: Path) -> CameraGps | None:
     """Read EXIF GPS tags directly from a file (never a sidecar).
 
     Returns None when GPS is absent or when latitude AND longitude are both
-    near zero (the (0,0) "no fix" sentinel seen in some old devices). The `#`
-    suffix on each tag forces signed decimal output, applying the
-    GPSLatitudeRef/LongitudeRef letters automatically.
+    near zero (the (0,0) "no fix" sentinel seen in some old devices).
+
+    Use composite (no-namespace) `-GPSLatitude`/`-GPSLongitude` rather than
+    `-EXIF:GPSLatitude`/`-EXIF:GPSLongitude` — `-coordFormat` only applies the
+    GPSLatitudeRef/LongitudeRef sign correction to composite tags. The
+    namespace-qualified EXIF form ignores `-coordFormat` and returns the
+    unsigned stored value, which silently breaks southern/western hemispheres.
+    The `#` suffix on `-EXIF:GPSAltitude` forces numeric output instead of a
+    localized string like "30.5 m Above Sea Level".
     """
     cmd = [
         EXIFTOOL,
