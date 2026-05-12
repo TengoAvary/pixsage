@@ -139,6 +139,12 @@ class EmbedRunner:
                 else:
                     sys.stderr.write(msg + "\n")
 
+        # Record which embedder version produced these vectors so the registry can
+        # detect cross-catalog mismatch.
+        from pixsage.registry import DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
+        self.catalog.set_meta("image_embedder_signature", DEFAULT_IMAGE_SIGNATURE)
+        self.catalog.set_meta("caption_embedder_signature", DEFAULT_CAPTION_SIGNATURE)
+
         return stats
 
     def _caption_is_stale(self, kind: str, sha: str, caption_updated_at: str | None) -> bool:

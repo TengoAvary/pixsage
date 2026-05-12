@@ -138,3 +138,27 @@ class Registry:
         if e is None:
             raise KeyError(f"no catalog with id {id!r}")
         e.available = available
+
+
+# Default signatures used when a catalog's meta doesn't record them.
+# Matches what pixsage currently embeds with: SigLIP2-so400m + MiniLM-L6-v2.
+DEFAULT_IMAGE_SIGNATURE = "siglip2-so400m-patch14-384@v1"
+DEFAULT_CAPTION_SIGNATURE = "minilm-L6-v2@v2"
+
+
+def derive_signatures(photoindex_path: Path) -> tuple[str, str]:
+    """Read (image_signature, caption_signature) from a catalog.
+
+    Order:
+    1. Catalog meta keys `image_embedder_signature` / `caption_embedder_signature`
+       (written by `pixsage embed` for new catalogs).
+    2. DEFAULT_* constants (for catalogs embedded before this feature shipped).
+    """
+    from pixsage.catalog import Catalog
+    catalog_path = Path(photoindex_path) / "catalog.db"
+    if not catalog_path.exists():
+        return DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
+    cat = Catalog(catalog_path)
+    img = cat.get_meta("image_embedder_signature") or DEFAULT_IMAGE_SIGNATURE
+    cap = cat.get_meta("caption_embedder_signature") or DEFAULT_CAPTION_SIGNATURE
+    return img, cap

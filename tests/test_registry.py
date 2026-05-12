@@ -152,3 +152,40 @@ def test_remove_missing_id_raises(tmp_path: Path) -> None:
     reg.load()
     with pytest.raises(KeyError):
         reg.remove("nonexistent")
+
+
+def test_derive_signatures_reads_meta(tmp_path: Path) -> None:
+    """If catalog.meta has the signature keys, derive_signatures returns them."""
+    from pixsage.catalog import Catalog
+    from pixsage.registry import derive_signatures
+
+    photoindex = tmp_path / ".photoindex"
+    photoindex.mkdir()
+    cat = Catalog(photoindex / "catalog.db")
+    cat.init_schema()
+    cat.set_meta("image_embedder_signature", "siglip2-so400m@v1")
+    cat.set_meta("caption_embedder_signature", "minilm-L6-v2@v2")
+
+    img, cap = derive_signatures(photoindex)
+    assert img == "siglip2-so400m@v1"
+    assert cap == "minilm-L6-v2@v2"
+
+
+def test_derive_signatures_falls_back_to_defaults(tmp_path: Path) -> None:
+    """Old catalogs with no signature meta get the codebase's default signatures."""
+    from pixsage.catalog import Catalog
+    from pixsage.registry import (
+        DEFAULT_IMAGE_SIGNATURE,
+        DEFAULT_CAPTION_SIGNATURE,
+        derive_signatures,
+    )
+
+    photoindex = tmp_path / ".photoindex"
+    photoindex.mkdir()
+    cat = Catalog(photoindex / "catalog.db")
+    cat.init_schema()
+    # No meta keys set.
+
+    img, cap = derive_signatures(photoindex)
+    assert img == DEFAULT_IMAGE_SIGNATURE
+    assert cap == DEFAULT_CAPTION_SIGNATURE
