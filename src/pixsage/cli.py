@@ -560,6 +560,73 @@ def geolocate(
     typer.echo(f"done. processed={stats['processed']} skipped={stats['skipped']} errored={stats['errored']}")
 
 
+@app.command(name="backfill-exif-gps")
+def backfill_exif_gps(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    force: bool = typer.Option(False, "--force", help="Re-read EXIF for photos that already have stored GPS."),
+    catalog: Path | None = typer.Option(None, "--catalog", help="Override catalog DB path."),
+) -> None:
+    """Populate exif_latitude/longitude/altitude for an already-tagged catalog.
+
+    Use this after upgrading from a pixsage version that didn't extract EXIF
+    GPS during `tag`. Iterates every photo in the catalog, reads its EXIF GPS
+    via exiftool, and stores the result.
+
+    Photos that already have stored GPS are skipped unless --force is set.
+    Photos whose current_path doesn't exist on this machine are reported but
+    not flagged as errors (the catalog may have been moved).
+    """
+    from pixsage.xmp import read_camera_gps
+
+    photoindex = photo_root / ".photoindex"
+    catalog_path = catalog or (photoindex / "catalog.db")
+    if not catalog_path.exists():
+        typer.echo(f"no catalog at {catalog_path}; run `pixsage tag` first", err=True)
+        raise typer.Exit(code=1)
+
+    cat = Catalog(catalog_path)
+    cat.init_schema()
+
+    checked = 0
+    with_gps = 0
+    skipped = 0
+    missing = 0
+    errored = 0
+
+    cur = cat._conn.execute("SELECT sha256, current_path FROM photos")
+    rows = cur.fetchall()
+    for row in rows:
+        sha = row["sha256"]
+        path = Path(row["current_path"])
+
+        if not force and cat.get_camera_gps(sha) is not None:
+            skipped += 1
+            continue
+
+        if not path.exists():
+            missing += 1
+            continue
+
+        checked += 1
+        try:
+            gps = read_camera_gps(path)
+        except Exception as e:
+            errored += 1
+            typer.echo(f"  error on {path.name}: {e}", err=True)
+            continue
+
+        if gps is not None:
+            cat.set_camera_gps(sha, latitude=gps.latitude, longitude=gps.longitude, altitude=gps.altitude)
+            with_gps += 1
+
+    cat.close()
+    typer.echo(
+        f"done. checked: {checked} with gps: {with_gps} "
+        f"no gps: {checked - with_gps} skipped: {skipped} "
+        f"missing: {missing} errored: {errored}"
+    )
+
+
 @app.command()
 def export(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
