@@ -24,17 +24,22 @@ class GeoRunner:
         geolocator: Geolocator,
         force: bool = False,
         progress: bool = False,
+        include_with_camera_gps: bool = False,
     ) -> None:
         self.catalog = catalog
         self.geolocator = geolocator
         self.force = force
         self.progress = progress
+        self.include_with_camera_gps = include_with_camera_gps
 
     def run(self) -> dict[str, int]:
         info = self.geolocator.info
         stats = {"processed": 0, "skipped": 0, "errored": 0}
 
-        rows = list(self.catalog.iter_photos_for_geolocation(include_errored=self.force))
+        rows = list(self.catalog.iter_photos_for_geolocation(
+            include_errored=self.force,
+            include_with_camera_gps=self.include_with_camera_gps,
+        ))
         if self.progress:
             from tqdm import tqdm
             iterator = tqdm(rows, unit="photo")

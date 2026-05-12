@@ -91,3 +91,27 @@ def test_runner_replaces_predictions_on_force(catalog: Catalog, tmp_path: Path):
 
     preds = catalog.get_geo_predictions("sha1", "mock")
     assert len(preds) == 3  # not 6
+
+
+def test_runner_skips_photos_with_camera_gps_by_default(catalog: Catalog, tmp_path: Path):
+    _seed_photo(catalog, "sha-no-gps", tmp_path, name="a.jpg")
+    img_with_gps = _seed_photo(catalog, "sha-has-gps", tmp_path, name="b.jpg")
+    catalog.set_camera_gps("sha-has-gps", latitude=10.0, longitude=20.0, altitude=None)
+
+    GeoRunner(catalog=catalog, geolocator=MockGeolocator(top_k=2)).run()
+
+    assert catalog.get_geo_predictions("sha-no-gps", "mock") != []
+    assert catalog.get_geo_predictions("sha-has-gps", "mock") == []
+
+
+def test_runner_predict_all_includes_photos_with_camera_gps(catalog: Catalog, tmp_path: Path):
+    _seed_photo(catalog, "sha-has-gps", tmp_path, name="b.jpg")
+    catalog.set_camera_gps("sha-has-gps", latitude=10.0, longitude=20.0, altitude=None)
+
+    GeoRunner(
+        catalog=catalog,
+        geolocator=MockGeolocator(top_k=2),
+        include_with_camera_gps=True,
+    ).run()
+
+    assert catalog.get_geo_predictions("sha-has-gps", "mock") != []
