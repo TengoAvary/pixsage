@@ -158,6 +158,32 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         _load_catalog_into_multi(app, entry)
         return RedirectResponse(url="/", status_code=303)
 
+    @app.post("/catalogs/{catalog_id}/remove")
+    def remove_catalog(catalog_id: str) -> RedirectResponse:
+        registry = app.state.registry
+        multi = app.state.multi_search
+        entry = registry.find_by_id(catalog_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        multi.remove_catalog(catalog_id)
+        app.state.catalogs.pop(catalog_id, None)
+        app.state.path_resolvers.pop(catalog_id, None)
+        app.state.thumbs_by_catalog.pop(catalog_id, None)
+        app.state.photoindex_paths.pop(catalog_id, None)
+        registry.remove(catalog_id)
+        registry.save()
+        return RedirectResponse(url="/", status_code=303)
+
+    @app.post("/catalogs/{catalog_id}/rename")
+    def rename_catalog(catalog_id: str, label: str = Form(...)) -> RedirectResponse:
+        registry = app.state.registry
+        entry = registry.find_by_id(catalog_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        registry.rename(catalog_id, label)
+        registry.save()
+        return RedirectResponse(url="/", status_code=303)
+
     @app.post("/catalogs/{catalog_id}/toggle")
     def toggle_catalog(catalog_id: str) -> RedirectResponse:
         registry = app.state.registry

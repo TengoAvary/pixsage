@@ -8,7 +8,9 @@
       {% for entry in entries %}
         <li class="catalog-row" data-catalog-id="{{ entry.id }}">
           <span class="status-dot status-{% if entry.available %}available{% else %}offline{% endif %}"></span>
-          <span class="label">{{ entry.label }}</span>
+          <form method="post" action="/catalogs/{{ entry.id }}/rename" class="rename-form" style="display:inline">
+            <input type="text" name="label" value="{{ entry.label }}" onblur="this.form.submit()">
+          </form>
           <span class="path">{{ entry.photoindex_path }}</span>
           <form method="post" action="/catalogs/{{ entry.id }}/toggle" style="display:inline">
             <input type="checkbox" name="enabled" {% if entry.enabled %}checked{% endif %}
