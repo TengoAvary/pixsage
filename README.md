@@ -269,7 +269,16 @@ whole experimental block is one commit to remove.
 
 Per-folder clickable launchers so the photographer can double-click `Pixsage Search` in any indexed folder and get the search webapp without touching a terminal.
 
-**One-time setup on her machine** (puts a portable Python + `pixsage[serve]` + pre-staged HuggingFace models under `%LOCALAPPDATA%\pixsage` on Windows or `~/Library/Application Support/pixsage` on Mac; takes ~10 minutes, downloads ~2 GB of model weights):
+**One-time setup on his machine** (puts a portable Python + `pixsage[serve]` + pre-staged HuggingFace models under `%LOCALAPPDATA%\pixsage` on Windows or `~/Library/Application Support/pixsage` on Mac; takes ~10 minutes, downloads ~2 GB of model weights):
+
+First, get the pixsage source onto the target machine — clone the repo or copy the source tree. The install command runs from inside it:
+
+```bash
+git clone <pixsage-repo-url> ~/dev/pixsage   # or scp the source tree
+cd ~/dev/pixsage
+```
+
+The bootstrap python needs only the stdlib (a stock `python3` on macOS, or the `python` from a normal Windows install). All other deps live inside the runtime that this script creates.
 
 **Windows prerequisite — enable Developer Mode.** HuggingFace's model cache uses symlinks, which on Windows require either Developer Mode (no admin needed) or running as admin. Without this the install crashes with `WinError 1314: A required privilege is not held by the client` partway through the model download.
 
@@ -283,8 +292,13 @@ python -m scripts.launcher.install_runtime --target windows-x64
 ```
 
 ```bash
-# macOS (Apple Silicon)
-python -m scripts.launcher.install_runtime --target macos-arm64
+# macOS (Apple Silicon — M1/M2/M3/M4)
+python3 -m scripts.launcher.install_runtime --target macos-arm64
+```
+
+```bash
+# macOS (Intel)
+python3 -m scripts.launcher.install_runtime --target macos-x86_64
 ```
 
 **Per-folder staging (run once per indexed folder, on either machine):**
