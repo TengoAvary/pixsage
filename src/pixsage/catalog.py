@@ -111,15 +111,21 @@ class Catalog:
             self._conn.executescript(SCHEMA_GEO_PREDICTIONS)
             self._conn.executescript(SCHEMA_USER_LOCATIONS)
             self._conn.executescript(SCHEMA_META)
-            self._migrate_add_caption_columns()
+            self._migrate_add_columns()
 
-    def _migrate_add_caption_columns(self) -> None:
+    def _migrate_add_columns(self) -> None:
         cur = self._conn.execute("PRAGMA table_info(photos)")
         existing = {row["name"] for row in cur.fetchall()}
-        if "caption" not in existing:
-            self._conn.execute("ALTER TABLE photos ADD COLUMN caption TEXT")
-        if "caption_updated_at" not in existing:
-            self._conn.execute("ALTER TABLE photos ADD COLUMN caption_updated_at TEXT")
+        additions = [
+            ("caption", "TEXT"),
+            ("caption_updated_at", "TEXT"),
+            ("exif_latitude", "REAL"),
+            ("exif_longitude", "REAL"),
+            ("exif_altitude", "REAL"),
+        ]
+        for name, type_ in additions:
+            if name not in existing:
+                self._conn.execute(f"ALTER TABLE photos ADD COLUMN {name} {type_}")
 
     def close(self) -> None:
         self._conn.close()
