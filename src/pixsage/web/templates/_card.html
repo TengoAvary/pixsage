@@ -1,9 +1,10 @@
-<article class="card" data-sha="{{ hit.sha256 }}">
+<article class="card" data-sha="{{ hit.sha256 }}" data-catalog-id="{{ hit.catalog_id }}">
   <a href="/photo/{{ hit.catalog_id }}/{{ hit.sha256 }}">
     <img src="/thumb/{{ hit.catalog_id }}/{{ hit.sha256 }}?size=medium" alt="{{ hit.filename }}" loading="lazy" />
   </a>
   <div class="meta">
     <div class="filename">{{ hit.filename }}</div>
     <div class="score">{{ "%.3f"|format(hit.score) }}</div>
+    {% if multi_catalog %}<div class="catalog-badge">{{ hit.catalog_label }}</div>{% endif %}
   </div>
 </article>

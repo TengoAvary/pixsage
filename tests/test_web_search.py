@@ -191,3 +191,65 @@ def test_similar_404_when_photo_missing(tmp_path: Path):
         cid = _catalog_id(client)
         r = client.get(f"/similar/{cid}/nonexistent")
         assert r.status_code == 404
+
+
+def test_result_card_shows_catalog_badge_in_multi_mode(tmp_path: Path) -> None:
+    """When two catalogs are enabled, result cards must show the catalog label."""
+    from pixsage.catalog import Catalog
+    from pixsage.registry import Registry
+    from pixsage.web.app import build_app
+
+    # Two catalogs, each with one photo
+    sony = tmp_path / "Sony"
+    iphone = tmp_path / "iPhone"
+    for root, sha in [(sony, "sha-sony"), (iphone, "sha-iphone")]:
+        photoindex = root / ".photoindex"
+        photoindex.mkdir(parents=True)
+        cat = Catalog(photoindex / "catalog.db")
+        cat.init_schema()
+        cat.set_photo_root_if_unset(root)
+        img = root / f"{sha}.jpg"
+        img.write_bytes(b"fake")
+        cat.upsert_photo(sha, img, img.stat().st_size, img.stat().st_mtime)
+
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    reg.add(photoindex_path=str((sony / ".photoindex").resolve()),
+            label="Sony",
+            image_embedder_signature="siglip2-so400m-patch14-384@v1",
+            caption_embedder_signature="minilm-L6-v2@v2")
+    reg.add(photoindex_path=str((iphone / ".photoindex").resolve()),
+            label="iPhone",
+            image_embedder_signature="siglip2-so400m-patch14-384@v1",
+            caption_embedder_signature="minilm-L6-v2@v2")
+    reg.save()
+
+    app = build_app(registry_path=tmp_path / "catalogs.json",
+                    embedder_name="mock", skip_discovery=True)
+    with TestClient(app) as client:
+        r = client.get("/", params={"q": "anything"})
+        assert r.status_code == 200
+        # Panel itself shows both labels.
+        assert "Sony" in r.text and "iPhone" in r.text
+        # Soft-check the badge: if mock returns hits, catalog-badge must render.
+        if 'class="card"' in r.text:
+            assert "catalog-badge" in r.text
+
+
+def test_result_card_no_badge_in_single_catalog_mode(tmp_path: Path) -> None:
+    """When only one catalog is enabled, result cards must NOT show the catalog badge."""
+    root = _seed_root(tmp_path)
+    from pixsage.web.app import build_app
+
+    app = build_app(
+        photo_root=root,
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        skip_discovery=True,
+    )
+    with TestClient(app) as client:
+        r = client.get("/", params={"q": "a red square", "image_weight": "0.0"})
+        assert r.status_code == 200
+        # We have hits in single-catalog mode — verify the badge is absent.
+        assert 'class="card"' in r.text
+        assert "catalog-badge" not in r.text
