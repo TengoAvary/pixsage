@@ -1,4 +1,5 @@
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -29,7 +30,12 @@ def test_smoke_build_and_serve(tmp_path: Path) -> None:
     from scripts.launcher.build_runtime import build_runtime
     from scripts.launcher.download_models import download_models
 
-    target = "windows-x64" if sys.platform == "win32" else "macos-arm64"
+    if sys.platform == "win32":
+        target = "windows-x64"
+    elif sys.platform == "darwin":
+        target = "macos-arm64" if platform.machine() == "arm64" else "macos-x86_64"
+    else:
+        pytest.skip(f"no PBS target defined for {sys.platform}")
     runtime_dir = tmp_path / "runtime"
     models_dir = tmp_path / "models"
 

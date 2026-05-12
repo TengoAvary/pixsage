@@ -48,6 +48,14 @@ TARGETS: dict[str, PBSTarget] = {
         python_relpath="python/bin/python3",
         expected_python_version=PYTHON_VERSION,
     ),
+    "macos-x86_64": PBSTarget(
+        name="macos-x86_64",
+        tarball_url=_pbs_url(
+            f"cpython-{PYTHON_VERSION}+{PBS_RELEASE}-x86_64-apple-darwin-install_only_stripped.tar.gz"
+        ),
+        python_relpath="python/bin/python3",
+        expected_python_version=PYTHON_VERSION,
+    ),
 }
 
 

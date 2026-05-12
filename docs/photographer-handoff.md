@@ -36,17 +36,17 @@ The v1 Mac launcher is sufficient as-is. The remaining gap is not the launcher; 
 
 ## Actual remaining work (in order)
 
-### 1. Intel Mac runtime target  (~half day)
+### 1. Intel Mac runtime target — ✅ done
 
-`build_runtime.py` and `install_runtime.py` currently know about `windows-x64` and `macos-arm64`. The photographer is on **Intel Mac**, so we need a `macos-x86_64` target.
+Added `macos-x86_64` target. PBS tarball verified against release `20260508`:
+`cpython-3.12.13+20260508-x86_64-apple-darwin-install_only_stripped.tar.gz`.
+`install_runtime.py` and `build_runtime.py` both expose it via `--target macos-x86_64`.
+Smoke test branches on `platform.machine()` on Darwin so an Intel Mac and an
+Apple-Silicon Mac each pick the right tarball when `PIXSAGE_LAUNCHER_SMOKE=1`.
 
-- Look up the right `python-build-standalone` release filename pattern for Intel-Mac (`cpython-3.12.13+...-x86_64-apple-darwin-install_only_stripped.tar.gz` is the likely shape; verify against the actual GitHub release tag we're pinned to).
-- Add the target to the `--target` choices in `install_runtime.py` and the PBS URL builder in `build_runtime.py`.
-- Update `download_models.py` if it gates on platform (it shouldn't, but verify).
-- Smoke test (`tests/launcher/test_smoke.py`) currently picks target by `sys.platform`. Update to also branch on `platform.machine()` so Intel-Mac and Apple-Silicon-Mac pick the right PBS tarball.
-- pip should resolve compatible torch + torchvision wheels for `darwin-x86_64` without further changes. Both ship Intel-Mac wheels.
-
-This is the hard blocker — the photographer can't install the runtime today without this.
+The end-to-end smoke test still needs to run on a real Intel Mac before
+shipping to the photographer (the unit suite verifies wiring, not the actual
+download/extract/run chain on Darwin x86_64).
 
 ### 2. Plan 2.5: SigLIP2 text-tower extraction  (~3 hours)
 

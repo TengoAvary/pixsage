@@ -10,7 +10,13 @@ def test_pbs_release_is_pinned() -> None:
 
 
 def test_targets_have_expected_keys() -> None:
-    assert set(TARGETS.keys()) == {"windows-x64", "macos-arm64"}
+    assert set(TARGETS.keys()) == {"windows-x64", "macos-arm64", "macos-x86_64"}
+
+
+def test_macos_x86_64_target_uses_intel_triple() -> None:
+    target = get_target("macos-x86_64")
+    assert "x86_64-apple-darwin" in target.tarball_url
+    assert target.python_relpath == "python/bin/python3"
 
 
 def test_get_target_returns_known() -> None:

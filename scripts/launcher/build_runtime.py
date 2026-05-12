@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 
-from scripts.launcher.pbs_targets import get_target
+from scripts.launcher.pbs_targets import TARGETS, get_target
 
 
 def download_pbs_tarball(url: str, cache_dir: Path) -> Path:
@@ -120,7 +120,7 @@ def build_runtime(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build a portable pixsage runtime.")
-    parser.add_argument("--target", required=True, choices=sorted(["windows-x64", "macos-arm64"]))
+    parser.add_argument("--target", required=True, choices=sorted(TARGETS.keys()))
     parser.add_argument("--out", required=True, type=Path, help="Output directory.")
     parser.add_argument("--cache-dir", type=Path, default=None, help="Tarball cache.")
     parser.add_argument("--skip-pip", action="store_true", help="Skip the pip install step (download+extract only).")

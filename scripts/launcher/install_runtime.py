@@ -21,6 +21,7 @@ from pathlib import Path
 
 from scripts.launcher.build_runtime import build_runtime
 from scripts.launcher.download_models import download_models
+from scripts.launcher.pbs_targets import TARGETS
 
 
 def canonical_install_path(home_override: Path | None = None) -> Path:
@@ -53,7 +54,7 @@ def install_runtime_via_build(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install pixsage runtime locally.")
-    parser.add_argument("--target", required=True, choices=["windows-x64", "macos-arm64"])
+    parser.add_argument("--target", required=True, choices=sorted(TARGETS.keys()))
     parser.add_argument("--install-dir", type=Path, default=None,
                         help="Override install location (default: canonical OS path).")
     parser.add_argument("--force", action="store_true", help="Reinstall even if a runtime exists.")
