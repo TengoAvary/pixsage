@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from pixsage.xmp import CameraGps, read_camera_gps
+from pixsage.xmp import CameraGps, XmpFields, read_camera_gps, read_metadata, write_xmp
 
 EXIFTOOL = shutil.which("exiftool")
 needs_exiftool = pytest.mark.skipif(EXIFTOOL is None, reason="exiftool not on PATH")
@@ -91,3 +91,58 @@ def test_read_camera_gps_southern_hemisphere(tmp_path: Path):
     assert got is not None
     assert got.latitude < 0
     assert got.longitude < 0
+
+
+@needs_exiftool
+def test_read_metadata_jpeg_returns_both_xmp_and_gps(tmp_path: Path):
+    """For an embedded-XMP file, one subprocess fetches both XMP and EXIF GPS."""
+    p = tmp_path / "a.jpg"
+    Image.new("RGB", (64, 64), color="red").save(p)
+    write_xmp(p, XmpFields(subject=["foo"], hierarchical_subject=[], description="hello"), is_raw=False)
+    _inject_exif_gps(p, lat=10.0, lon=20.0, alt=100.0)
+
+    xmp_fields, gps = read_metadata(p, is_raw=False)
+    assert xmp_fields.subject == ["foo"]
+    assert xmp_fields.description == "hello"
+    assert gps is not None
+    assert abs(gps.latitude - 10.0) < 1e-3
+    assert abs(gps.longitude - 20.0) < 1e-3
+
+
+@needs_exiftool
+def test_read_metadata_jpeg_without_gps(tmp_path: Path):
+    p = tmp_path / "a.jpg"
+    Image.new("RGB", (64, 64), color="red").save(p)
+    write_xmp(p, XmpFields(subject=["foo"], hierarchical_subject=[], description=None), is_raw=False)
+
+    xmp_fields, gps = read_metadata(p, is_raw=False)
+    assert xmp_fields.subject == ["foo"]
+    assert gps is None
+
+
+@needs_exiftool
+def test_read_metadata_raw_sidecar(tmp_path: Path):
+    """For sidecar raws, XMP comes from the sidecar and GPS from the raw file.
+
+    Uses a placeholder raw + empty sidecar (the same pattern as
+    test_xmp_gps.test_write_gps_updates_existing_sidecar_for_raw_path).
+    """
+    raw = tmp_path / "DSC0001.arw"
+    # Write a valid JPEG masquerading as .arw so exiftool can read EXIF GPS off it.
+    # exiftool rejects writing EXIF to a mismatched extension, so inject GPS
+    # into a .jpg first, then rename to .arw — exiftool reads it fine either way.
+    jpg = tmp_path / "DSC0001.jpg"
+    Image.new("RGB", (64, 64), color="red").save(jpg, format="JPEG")
+    _inject_exif_gps(jpg, lat=-1.0, lon=2.0, alt=None)
+    jpg.rename(raw)
+
+    sidecar = raw.with_suffix(".xmp")
+    write_xmp(raw, XmpFields(subject=["bar"], hierarchical_subject=[], description="x"), is_raw=True)
+    assert sidecar.exists()
+
+    xmp_fields, gps = read_metadata(raw, is_raw=True)
+    assert xmp_fields.subject == ["bar"]
+    assert xmp_fields.description == "x"
+    assert gps is not None
+    assert abs(gps.latitude - -1.0) < 1e-3
+    assert abs(gps.longitude - 2.0) < 1e-3
