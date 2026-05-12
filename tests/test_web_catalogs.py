@@ -70,3 +70,36 @@ def test_panel_shows_offline_for_unreachable_path(tmp_path: Path) -> None:
         assert r.status_code == 200
         assert "Offline Drive" in r.text
         assert "offline" in r.text.lower()
+
+
+def test_toggle_disables_catalog(tmp_path: Path) -> None:
+    from pixsage.web.app import build_app
+    sony = tmp_path / "Sony"
+    _make_catalog(sony / ".photoindex", photo_root=sony)
+
+    registry_path = tmp_path / "catalogs.json"
+    reg = Registry(registry_path)
+    reg.load()
+    e = reg.add(photoindex_path=str((sony / ".photoindex").resolve()),
+                label="Sony",
+                image_embedder_signature="siglip2-so400m-patch14-384@v1",
+                caption_embedder_signature="minilm-L6-v2@v2")
+    reg.save()
+
+    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    with TestClient(app) as client:
+        r = client.post(f"/catalogs/{e.id}/toggle", follow_redirects=False)
+        assert r.status_code in (302, 303)
+        # Reload registry from disk to confirm persisted
+        reg2 = Registry(registry_path)
+        reg2.load()
+        assert reg2.find_by_id(e.id).enabled is False
+
+
+def test_toggle_unknown_id_returns_404(tmp_path: Path) -> None:
+    from pixsage.web.app import build_app
+    registry_path = tmp_path / "catalogs.json"
+    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    with TestClient(app) as client:
+        r = client.post("/catalogs/nonexistent/toggle")
+        assert r.status_code == 404

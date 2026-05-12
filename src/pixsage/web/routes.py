@@ -128,6 +128,22 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             },
         )
 
+    @app.post("/catalogs/{catalog_id}/toggle")
+    def toggle_catalog(catalog_id: str) -> RedirectResponse:
+        registry = app.state.registry
+        multi = app.state.multi_search
+        entry = registry.find_by_id(catalog_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"unknown catalog {catalog_id!r}")
+        registry.toggle(catalog_id)
+        registry.save()
+        # Reload the MultiSearchService entry to match the new enabled state.
+        if entry.enabled and entry.available:
+            _load_catalog_into_multi(app, entry)
+        else:
+            multi.remove_catalog(catalog_id)
+        return RedirectResponse(url="/", status_code=303)
+
     @app.get("/similar/{catalog_id}/{sha256}", response_class=HTMLResponse)
     def similar(catalog_id: str, sha256: str, request: Request) -> HTMLResponse:
         config = app.state.config
@@ -304,6 +320,42 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
                 sha, latitude, longitude, place, applied_via
             )
         return RedirectResponse(f"/cluster/{cluster_id}", status_code=303)
+
+
+def _load_catalog_into_multi(app, entry) -> None:
+    """Load a single catalog into the MultiSearchService. Used by toggle/add/rescan."""
+    from pixsage.catalog import Catalog
+    from pixsage.path_translation import PathResolver
+    from pixsage.search import SearchService
+    from pixsage.vectors import VectorStore
+    from pixsage.web.thumbs import ThumbnailCache
+
+    photoindex = Path(entry.photoindex_path)
+    catalog = Catalog(photoindex / "catalog.db")
+    catalog.init_schema()
+    app.state.catalogs[entry.id] = catalog
+    app.state.photoindex_paths[entry.id] = photoindex
+    stored_root = catalog.get_meta("photo_root_at_embed")
+    app.state.path_resolvers[entry.id] = PathResolver(
+        stored_root=stored_root,
+        runtime_root=photoindex.parent,
+    )
+    app.state.thumbs_by_catalog[entry.id] = ThumbnailCache(photoindex / "thumbs")
+
+    vectors = VectorStore(photoindex / "vectors")
+    service = SearchService(
+        store=vectors,
+        embedder=app.state.embedder,
+        image_kind=app.state.embedder.info.image_kind,
+        text_kind=app.state.embedder.info.text_kind,
+    )
+    service.load()
+    app.state.multi_search.add_catalog(
+        catalog_id=entry.id,
+        service=service,
+        image_sig=entry.image_embedder_signature or DEFAULT_IMAGE_SIGNATURE,
+        caption_sig=entry.caption_embedder_signature or DEFAULT_CAPTION_SIGNATURE,
+    )
 
 
 def _get_or_compute_clusters(app):
