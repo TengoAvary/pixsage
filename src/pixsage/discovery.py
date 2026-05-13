@@ -30,13 +30,24 @@ SKIP_DIRS = frozenset({
 def list_mounted_roots() -> list[Path]:
     """Return likely roots for `walk_for_photoindex`.
 
-    Mac:  /Volumes/* (excluding the boot volume) + ~/
-    Win:  every live drive letter
-    Linux: /media/*, /mnt/*, ~/  (best-effort)
+    Mac:  /Volumes/* (mounted drives) + ~/
+    Win:  ~/ for the system drive (skips Windows/Program Files/ProgramData),
+          every other live drive letter at root
+    Linux: /media/*, /mnt/*, ~/
+
+    The system-drive case matters on Windows: walking `C:\\` from root with
+    a 5-second BFS budget exhausts itself in `Windows\\` and similar before
+    reaching any user-photo location. User catalogs live under `~/` or on
+    external drives — those are the only relevant roots.
     """
+    import os
     roots: list[Path] = []
     home = Path.home()
 
+    # Order matters: external drives first (small, likely to contain photo
+    # catalogs), home last (large, used as a fallback for ~/Pictures and
+    # similar). With a shared time budget, exhausting it on home would mean
+    # external drives never get walked.
     if sys.platform == "darwin":
         volumes = Path("/Volumes")
         if volumes.exists():
@@ -45,10 +56,16 @@ def list_mounted_roots() -> list[Path]:
         roots.append(home)
     elif sys.platform == "win32":
         import string
+        system_drive = os.environ.get("SystemDrive", "C:").upper()
         for letter in string.ascii_uppercase:
             drive = Path(f"{letter}:\\")
-            if drive.exists():
-                roots.append(drive)
+            if not drive.exists():
+                continue
+            if f"{letter}:" == system_drive:
+                continue  # handled below as `home`
+            roots.append(drive)
+        # Home last — large dir, used as fallback for ~/Pictures etc.
+        roots.append(home)
     else:
         for parent in (Path("/media"), Path("/mnt")):
             if parent.exists():
@@ -63,7 +80,7 @@ def walk_for_photoindex(
     roots: Iterable[Path],
     *,
     max_depth: int = 6,
-    time_budget_s: float = 5.0,
+    time_budget_s: float = 15.0,
 ) -> list[Path]:
     """BFS each root; return absolute paths of every `.photoindex/` found.
 

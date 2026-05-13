@@ -194,11 +194,18 @@ def derive_signatures(photoindex_path: Path | str) -> tuple[str, str]:
        (written by `pixsage embed` for new catalogs).
     2. DEFAULT_* constants (for catalogs embedded before this feature shipped).
     """
+    import sqlite3
     from pixsage.catalog import Catalog
     catalog_path = Path(photoindex_path) / "catalog.db"
     if not catalog_path.exists():
         return DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
     cat = Catalog(catalog_path)
-    img = cat.get_meta("image_embedder_signature") or DEFAULT_IMAGE_SIGNATURE
-    cap = cat.get_meta("caption_embedder_signature") or DEFAULT_CAPTION_SIGNATURE
+    try:
+        img = cat.get_meta("image_embedder_signature") or DEFAULT_IMAGE_SIGNATURE
+        cap = cat.get_meta("caption_embedder_signature") or DEFAULT_CAPTION_SIGNATURE
+    except sqlite3.OperationalError:
+        # Catalogs predating SCHEMA_META lack the meta table. Defaults are
+        # correct for any vintage of pre-multi-embedder pixsage.
+        img = DEFAULT_IMAGE_SIGNATURE
+        cap = DEFAULT_CAPTION_SIGNATURE
     return img, cap
