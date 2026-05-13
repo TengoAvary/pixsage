@@ -179,19 +179,20 @@ def tag(
         shas_needing_model_set: set[str] = set()
         for path in chunk:
             sha = hashes[path]
-            stat = path.stat()
-            cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
-
             is_dupe_set = len(paths_per_sha[sha]) > 1
             already_tagged = not effective_force and not cat.needs_tagging(sha, model_versions)
 
             # Non-dupe paths preserve the original skip-on-rerun semantics. Dupe
             # sets always run through option A so every path gets a sidecar
-            # even if the sha was already tagged.
+            # even if the sha was already tagged. Decide before doing any disk
+            # work so resumes on external drives skip cheaply.
             if already_tagged and not is_dupe_set:
                 skipped += 1
                 pbar.update(1)
                 continue
+
+            stat = path.stat()
+            cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
             if limit and processed >= limit:
                 stop = True
                 # Account for the rest of this chunk in the progress bar.
