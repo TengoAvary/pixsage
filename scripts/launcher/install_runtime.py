@@ -71,7 +71,34 @@ def install_runtime_via_build(
         env=env,
         check=True,
     )
+    _install_laptop_launcher(install_dir)
     print(f"\nRuntime ready at: {install_dir}")
+
+
+def _install_laptop_launcher(install_dir: Path) -> None:
+    """Drop a single laptop-level Pixsage Search launcher.
+
+    Mac: ~/Applications/Pixsage Search.command
+    Win: %USERPROFILE%\\Desktop\\Pixsage Search.bat
+    """
+    from scripts.launcher.launcher_templates import (
+        LAPTOP_MACOS_COMMAND,
+        LAPTOP_WINDOWS_BAT,
+        render,
+    )
+    if sys.platform == "darwin":
+        target_dir = Path.home() / "Applications"
+        target_dir.mkdir(exist_ok=True)
+        target = target_dir / "Pixsage Search.command"
+        target.write_text(render(LAPTOP_MACOS_COMMAND, runtime_path=str(install_dir)))
+        target.chmod(0o755)
+    elif sys.platform == "win32":
+        target = Path.home() / "Desktop" / "Pixsage Search.bat"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(render(LAPTOP_WINDOWS_BAT, runtime_path=str(install_dir)))
+    else:
+        return
+    print(f"Laptop launcher: {target}")
 
 
 def main() -> int:

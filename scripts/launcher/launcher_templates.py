@@ -32,6 +32,26 @@ exec "{runtime_path}/python/bin/python3" -m pixsage serve "$PWD"
 """
 
 
+# Laptop-level launchers — installed once on the photographer's machine by
+# install_runtime, not staged into per-folder. Invoke `pixsage serve` with no
+# path argument so the multi-catalog registry is the source of truth.
+
+LAPTOP_WINDOWS_BAT = r"""@echo off
+REM Pixsage Search laptop launcher (Windows).
+REM Runs the locally-installed pixsage runtime in multi-catalog mode.
+set PYTHONNOUSERSITE=1
+start "" "{runtime_path}\python\pythonw.exe" -m pixsage serve
+"""
+
+
+LAPTOP_MACOS_COMMAND = r"""#!/bin/bash
+# Pixsage Search laptop launcher (macOS).
+# Runs the locally-installed pixsage runtime in multi-catalog mode.
+export PYTHONNOUSERSITE=1
+exec "{runtime_path}/python/bin/python3" -m pixsage serve
+"""
+
+
 def render(template: str, runtime_path: str) -> str:
     """Substitute {runtime_path} into a template. No other placeholders."""
     return template.replace("{runtime_path}", runtime_path)

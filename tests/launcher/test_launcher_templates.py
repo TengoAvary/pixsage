@@ -22,3 +22,27 @@ def test_render_substitutes_only_known_placeholder() -> None:
     template = "echo {runtime_path} and {other}"
     out = render(template, runtime_path="X")
     assert out == "echo X and {other}"
+
+
+def test_laptop_command_template_invokes_serve_with_no_path() -> None:
+    from scripts.launcher.launcher_templates import LAPTOP_MACOS_COMMAND, render
+    rendered = render(LAPTOP_MACOS_COMMAND, runtime_path="/Users/test/Library/Application Support/pixsage")
+    # No "$PWD" or path argument after `pixsage serve`
+    assert "-m pixsage serve" in rendered
+    # The last arg on the python invocation should not be a directory path
+    line = next(l for l in rendered.splitlines() if "pixsage serve" in l)
+    parts = line.split("pixsage serve", 1)[1].strip()
+    # Args after serve, if any, should be flags only (start with --) or empty
+    if parts:
+        assert all(p.startswith("--") for p in parts.split()), f"unexpected args: {parts!r}"
+
+
+def test_laptop_bat_template_invokes_serve_with_no_path() -> None:
+    from scripts.launcher.launcher_templates import LAPTOP_WINDOWS_BAT, render
+    rendered = render(LAPTOP_WINDOWS_BAT, runtime_path=r"C:\Users\test\AppData\Local\pixsage")
+    assert "-m pixsage serve" in rendered
+    line = next(l for l in rendered.splitlines() if "pixsage serve" in l)
+    # No quoted path on the line after "pixsage serve"
+    after = line.split("pixsage serve", 1)[1].strip()
+    if after:
+        assert all(p.startswith("--") for p in after.split()), f"unexpected args: {after!r}"

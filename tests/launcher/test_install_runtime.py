@@ -68,3 +68,36 @@ def test_install_runtime_skips_when_already_present(tmp_path: Path) -> None:
 
     build.assert_not_called()
     run.assert_not_called()
+
+
+def test_install_runtime_drops_laptop_launcher_on_macos(tmp_path: Path, monkeypatch) -> None:
+    """After install, ~/Applications/Pixsage Search.command exists."""
+    from scripts.launcher.install_runtime import install_runtime_via_build
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "Applications").mkdir()
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: home))
+    monkeypatch.setattr("sys.platform", "darwin")
+
+    install_dir = tmp_path / "install"
+
+    def fake_build(target_name, out_dir, **kwargs):
+        (out_dir / "python" / "bin").mkdir(parents=True, exist_ok=True)
+        (out_dir / "python" / "bin" / "python3").write_text("")
+        return out_dir / "python" / "bin" / "python3"
+
+    def fake_run(cmd, **kwargs):
+        class R:
+            returncode = 0
+        return R()
+
+    with patch("scripts.launcher.install_runtime.build_runtime", side_effect=fake_build), \
+         patch("scripts.launcher.install_runtime.subprocess.run", side_effect=fake_run):
+        install_runtime_via_build(install_dir=install_dir, target="macos-arm64")
+
+    launcher = home / "Applications" / "Pixsage Search.command"
+    assert launcher.exists()
+    body = launcher.read_text()
+    assert "pixsage serve" in body
+    assert str(install_dir) in body
