@@ -267,20 +267,20 @@ whole experimental block is one commit to remove.
 
 ## Photographer-facing launcher (Phase 5)
 
-Per-folder clickable launchers so the photographer can double-click `Pixsage Search` in any indexed folder and get the search webapp without touching a terminal.
+One installable app per laptop. The app remembers every catalog it has ever seen, scans for newly-mounted drives on launch, and lets the user toggle which catalogs participate in search. No per-folder launchers; drives carry only `.photoindex/` data.
 
-**One-time setup on his machine** (puts a portable Python + `pixsage[serve]` + pre-staged HuggingFace models under `%LOCALAPPDATA%\pixsage` on Windows or `~/Library/Application Support/pixsage` on Mac; takes ~10 minutes, downloads ~2 GB of model weights):
+**One-time setup on his machine** (installs runtime + drops a single `Pixsage Search` launcher; takes ~10 minutes; downloads ~2 GB of model weights):
 
-First, get the pixsage source onto the target machine — clone the repo or copy the source tree. The install command runs from inside it:
+First, get the pixsage source onto the target machine:
 
 ```bash
-git clone <pixsage-repo-url> ~/dev/pixsage   # or scp the source tree
+git clone <pixsage-repo-url> ~/dev/pixsage
 cd ~/dev/pixsage
 ```
 
-The bootstrap python needs only the stdlib (a stock `python3` on macOS, or the `python` from a normal Windows install). All other deps live inside the runtime that this script creates.
+The bootstrap python needs only the stdlib.
 
-**Windows prerequisite — enable Developer Mode.** HuggingFace's model cache uses symlinks, which on Windows require either Developer Mode (no admin needed) or running as admin. Without this the install crashes with `WinError 1314: A required privilege is not held by the client` partway through the model download.
+**Windows prerequisite — enable Developer Mode.** HuggingFace's model cache uses symlinks; on Windows these require either Developer Mode or admin rights. Without this the install crashes mid-download.
 
 > Settings → Privacy & Security → For Developers → Developer Mode → On
 
@@ -301,17 +301,19 @@ python3 -m scripts.launcher.install_runtime --target macos-arm64
 python3 -m scripts.launcher.install_runtime --target macos-x86_64
 ```
 
-**Per-folder staging (run once per indexed folder, on either machine):**
+This puts:
+- Runtime under `%LOCALAPPDATA%\pixsage` (Win) or `~/Library/Application Support/pixsage` (Mac).
+- A `Pixsage Search` launcher on the user's Desktop (Win) or in `~/Applications/` (Mac).
 
-```bash
-pixsage stage-launchers /path/to/Sony\ alpha\ 7c
-```
+**Daily use:**
+1. Plug in any drive containing one or more `.photoindex/` folders.
+2. Double-click `Pixsage Search` on the laptop. Browser opens to the search webapp.
+3. The catalog panel above the search box lists every catalog the app has ever seen — available ones (drive plugged in) are green; offline ones (drive not plugged in) are greyed out.
+4. Toggle catalogs on/off, rename them, add new ones, or remove ones you no longer want. Use **Rescan drives** to pick up a freshly-plugged-in drive while the app is running.
 
-Drops `Pixsage Search.bat` (Windows) and `Pixsage Search.command` (macOS) into the folder. Both invoke the locally-installed runtime against the containing folder via `python -m pixsage serve <folder>`. The serve command auto-opens the default browser.
+**To stop:** kill the python process via Task Manager / Activity Monitor, or close the Terminal window that the `.command` opened.
 
-**Daily use:** photographer plugs in the drive, opens an indexed folder in Explorer / Finder, double-clicks `Pixsage Search`. Browser opens to the search grid in ~3 seconds (warm) or ~10 seconds (cold SigLIP2 load).
-
-To stop: kill the python process via Task Manager / Activity Monitor (no tray icon yet — Plan 3.5 polish).
+**Per-folder launchers (secondary).** `pixsage stage-launchers <folder>` still drops a per-folder `.bat`/`.command` if you want a folder-specific bookmark, but the laptop-level launcher is the canonical entry point.
 
 Plan 1 (path translation across machines) makes this work even when the drive's letter or mount point differs between Jack's workstation and the photographer's laptop. Catalog records `photo_root_at_embed` and serve translates absolute paths at request time.
 

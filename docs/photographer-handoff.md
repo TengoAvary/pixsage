@@ -79,13 +79,23 @@ The HEIC-as-JPG and rawpy-can't-DNG classes are deeper changes (probe file forma
 
 The Terminal that pops up on launcher click currently scrolls server logs. Could be cleaner — banner that says "Pixsage Search running. Close this window to stop." with logs routed to a file. Not blocking. Skip unless it bothers anyone.
 
+## Multi-catalog model (now shipped)
+
+The per-folder-launcher onboarding flow described in earlier drafts has been
+**replaced** by the app-on-laptop model. The photographer installs one app on
+the Mac; the app maintains a persistent registry of every catalog it has ever
+seen, rescans for newly-mounted drives on launch, and exposes a catalog panel
+in the search UI for toggling which catalogs are active. Drives carry only
+`.photoindex/` data — no `.command` files need to be staged onto them.
+
 ## Handoff sequence (once 1+2 are done)
 
 1. Jack: physical access to photographer's Mac (or remote shell session).
 2. Jack: clone pixsage or copy the source tree to the Mac.
-3. Jack: `python -m scripts.launcher.install_runtime --target macos-x86_64` on the Mac. ~10 min, ~280 MB download.
-4. Jack: on his Windows workstation, `pixsage stage-launchers E:\Sony alpha 7c` to drop `Pixsage Search.command` into the indexed drive.
-5. Photographer: plugs drive into Mac, opens the folder, double-clicks `Pixsage Search.command`. Browser opens. Terminal stays open as the "running" indicator. Closes Terminal to stop.
+3. Jack: `python -m scripts.launcher.install_runtime --target macos-x86_64` on the Mac. ~10 min, ~280 MB download. This installs the runtime **and** drops a single `Pixsage Search` launcher in `~/Applications/`.
+4. Photographer: plugs the indexed drive into the Mac, double-clicks `Pixsage Search` from `~/Applications/`. Browser opens to the search webapp. The catalog panel automatically discovers `.photoindex/` folders on the plugged-in drive; the photographer toggles them on. Future drives are picked up automatically on next launch (or via the **Rescan drives** button while the app is running). Terminal stays open as the "running" indicator. Closes Terminal to stop.
+
+No per-folder `pixsage stage-launchers` step is required for the handoff — the laptop-level launcher is the canonical entry point. (`stage-launchers` still works if a folder-specific bookmark is wanted, but it's secondary.)
 
 ## What's explicitly *not* on the roadmap
 
