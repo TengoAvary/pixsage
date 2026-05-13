@@ -55,32 +55,45 @@ class Florence2Tagger:
         self._model.eval()
 
     def tag(self, image: Image.Image) -> TagResult:
-        caption = self._run_prompt(image, "<MORE_DETAILED_CAPTION>")
-        # Pull tags from both DENSE_REGION_CAPTION (region phrases like "boy in
-        # red jacket") and OD (single-word categories like "willow", "person").
-        # Different images favor one or the other; landscapes especially tend
-        # to return nothing from DENSE_REGION_CAPTION.
-        labels: list[str] = []
-        for task in ("<DENSE_REGION_CAPTION>", "<OD>"):
-            labels.extend(self._extract_labels(self._run_prompt(image, task), task))
-        # De-dupe by lower-cased name, preserve first occurrence.
-        seen: set[str] = set()
-        unique_tags: list[Tag] = []
-        for lbl in labels:
-            name = lbl.strip()
-            if not name:
-                continue
-            key = name.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_tags.append(Tag(name=name, confidence=1.0, hierarchy=None, source="florence2"))
-        caption_text = caption.get("<MORE_DETAILED_CAPTION>") if isinstance(caption, dict) else (str(caption) if caption else None)
-        return TagResult(tags=unique_tags, caption=caption_text)
+        return self.tag_batch([image])[0]
 
-    def _run_prompt(self, image: Image.Image, task: str):
+    def tag_batch(self, images: list[Image.Image]) -> list[TagResult]:
+        if not images:
+            return []
+        caption_results = self._run_prompt_batch(images, "<MORE_DETAILED_CAPTION>")
+        dense_results = self._run_prompt_batch(images, "<DENSE_REGION_CAPTION>")
+        od_results = self._run_prompt_batch(images, "<OD>")
+
+        out: list[TagResult] = []
+        for img, cap, dense, od in zip(images, caption_results, dense_results, od_results):
+            labels: list[str] = []
+            labels.extend(self._extract_labels(dense, "<DENSE_REGION_CAPTION>"))
+            labels.extend(self._extract_labels(od, "<OD>"))
+            # De-dupe by lower-cased name, preserve first occurrence.
+            seen: set[str] = set()
+            unique_tags: list[Tag] = []
+            for lbl in labels:
+                name = lbl.strip()
+                if not name:
+                    continue
+                key = name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                unique_tags.append(Tag(name=name, confidence=1.0, hierarchy=None, source="florence2"))
+            caption_text = (
+                cap.get("<MORE_DETAILED_CAPTION>") if isinstance(cap, dict)
+                else (str(cap) if cap else None)
+            )
+            out.append(TagResult(tags=unique_tags, caption=caption_text))
+        return out
+
+    def _run_prompt_batch(self, images: list[Image.Image], task: str) -> list:
         import torch
-        inputs = self._processor(text=task, images=image, return_tensors="pt").to(self._device)
+        n = len(images)
+        inputs = self._processor(
+            text=[task] * n, images=list(images), return_tensors="pt", padding=True
+        ).to(self._device)
         # Match pixel_values dtype to the model's dtype (fp16 on CUDA, fp32 on CPU/MPS).
         model_dtype = next(self._model.parameters()).dtype
         pixel_values = inputs["pixel_values"].to(model_dtype)
@@ -89,11 +102,14 @@ class Florence2Tagger:
                 input_ids=inputs["input_ids"],
                 pixel_values=pixel_values,
                 max_new_tokens=1024,
-                num_beams=3,
+                num_beams=1,
                 do_sample=False,
             )
-        text = self._processor.batch_decode(generated, skip_special_tokens=False)[0]
-        return self._processor.post_process_generation(text, task=task, image_size=(image.width, image.height))
+        texts = self._processor.batch_decode(generated, skip_special_tokens=False)
+        return [
+            self._processor.post_process_generation(t, task=task, image_size=(img.width, img.height))
+            for t, img in zip(texts, images)
+        ]
 
     def _extract_labels(self, result, task: str) -> list[str]:
         if isinstance(result, dict):

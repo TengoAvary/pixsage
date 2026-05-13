@@ -160,27 +160,47 @@ def tag(
     sha_prior_strip: dict[str, list[Tag]] = {}
     seen_shas_this_run: set[str] = set()
 
-    for path in tqdm(paths, unit="img"):
-        sha = hashes[path]
-        stat = path.stat()
-        cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
+    # Batch size for GPU tagger throughput. 4 fits comfortably on a 24GB GPU
+    # for Florence-2 + RAM++ on the resized images load_image returns.
+    import os
+    batch_size = int(os.environ.get("PIXSAGE_TAGGER_BATCH", "4"))
 
-        is_dupe_set = len(paths_per_sha[sha]) > 1
-        already_tagged = not effective_force and not cat.needs_tagging(sha, model_versions)
+    pbar = tqdm(total=len(paths), unit="img")
+    i = 0
+    stop = False
+    while i < len(paths) and not stop:
+        chunk = paths[i : i + batch_size]
+        i += batch_size
 
-        # Non-dupe paths preserve the original skip-on-rerun semantics. Dupe
-        # sets always run through option A so every path gets a sidecar even
-        # if the sha was already tagged.
-        if already_tagged and not is_dupe_set:
-            skipped += 1
-            continue
-        if limit and processed >= limit:
-            break
+        # Stage A: per-path bookkeeping. Decide which paths in the chunk need
+        # work, and which shas need a fresh model run.
+        chunk_work: list[tuple[Path, str, bool]] = []  # (path, sha, is_first_for_sha)
+        shas_needing_model: list[tuple[str, Path]] = []  # (sha, path-to-load-image-from)
+        shas_needing_model_set: set[str] = set()
+        for path in chunk:
+            sha = hashes[path]
+            stat = path.stat()
+            cat.upsert_photo(sha256=sha, path=path, filesize=stat.st_size, mtime=stat.st_mtime)
 
-        is_first_for_sha = sha not in seen_shas_this_run
-        seen_shas_this_run.add(sha)
+            is_dupe_set = len(paths_per_sha[sha]) > 1
+            already_tagged = not effective_force and not cat.needs_tagging(sha, model_versions)
 
-        try:
+            # Non-dupe paths preserve the original skip-on-rerun semantics. Dupe
+            # sets always run through option A so every path gets a sidecar
+            # even if the sha was already tagged.
+            if already_tagged and not is_dupe_set:
+                skipped += 1
+                pbar.update(1)
+                continue
+            if limit and processed >= limit:
+                stop = True
+                # Account for the rest of this chunk in the progress bar.
+                pbar.update(len(chunk) - (chunk.index(path)))
+                break
+
+            is_first_for_sha = sha not in seen_shas_this_run
+            seen_shas_this_run.add(sha)
+
             if is_first_for_sha and sha not in sha_to_tags:
                 if already_tagged:
                     # Dupe set with one sha tagged in a prior run: pull the
@@ -188,41 +208,66 @@ def tag(
                     # re-running the model.
                     sha_to_tags[sha] = _reconstitute_tags_from_catalog(sha, cat)
                 else:
-                    sha_to_tags[sha] = _run_taggers(path, taggers, config)
-                    model_runs += 1
+                    if sha not in shas_needing_model_set:
+                        shas_needing_model.append((sha, path))
+                        shas_needing_model_set.add(sha)
             elif not is_first_for_sha:
                 dupe_writes += 1
 
-            filtered_tags, caption = sha_to_tags[sha]
-            new_sha, camera_gps = _apply_to_path(
-                path=path,
-                sha=sha,
-                is_raw=needs_sidecar(path),
-                filtered_tags=filtered_tags,
-                caption=caption,
-                is_first_for_sha=is_first_for_sha,
-                taggers=taggers,
-                config=config,
-                cat=cat,
-                dry_run=dry_run,
-                rewrite=rewrite,
-                sha_prior_strip=sha_prior_strip,
-            )
-            if not dry_run and camera_gps is not None:
-                cat.set_camera_gps(
-                    new_sha,
-                    latitude=camera_gps.latitude,
-                    longitude=camera_gps.longitude,
-                    altitude=camera_gps.altitude,
+            chunk_work.append((path, sha, is_first_for_sha))
+
+        # Stage B: batched model run for any shas needing fresh tags.
+        if shas_needing_model:
+            try:
+                images = [load_image(p) for _, p in shas_needing_model]
+                results = _run_taggers_batch(images, taggers, config)
+                for (sha, _), result in zip(shas_needing_model, results):
+                    sha_to_tags[sha] = result
+                    model_runs += 1
+            except Exception as e:  # batch failed wholesale — mark each pending sha
+                msg = str(e)
+                for sha, src_path in shas_needing_model:
+                    cat.mark_error(sha, msg)
+                    errored += 1
+                    typer.echo(f"  error on {src_path.name}: {e}", err=True)
+                # Drop any path that depended on a failed model run.
+                chunk_work = [w for w in chunk_work if w[1] in sha_to_tags]
+
+        # Stage C: per-path XMP write + catalog update, in original order.
+        for path, sha, is_first_for_sha in chunk_work:
+            try:
+                filtered_tags, caption = sha_to_tags[sha]
+                new_sha, camera_gps = _apply_to_path(
+                    path=path,
+                    sha=sha,
+                    is_raw=needs_sidecar(path),
+                    filtered_tags=filtered_tags,
+                    caption=caption,
+                    is_first_for_sha=is_first_for_sha,
+                    taggers=taggers,
+                    config=config,
+                    cat=cat,
+                    dry_run=dry_run,
+                    rewrite=rewrite,
+                    sha_prior_strip=sha_prior_strip,
                 )
-            if new_sha != sha:
-                sha_to_tags[new_sha] = sha_to_tags[sha]
-                seen_shas_this_run.add(new_sha)
-            processed += 1
-        except Exception as e:  # broad: log + continue
-            cat.mark_error(sha, str(e))
-            errored += 1
-            typer.echo(f"  error on {path.name}: {e}", err=True)
+                if not dry_run and camera_gps is not None:
+                    cat.set_camera_gps(
+                        new_sha,
+                        latitude=camera_gps.latitude,
+                        longitude=camera_gps.longitude,
+                        altitude=camera_gps.altitude,
+                    )
+                if new_sha != sha:
+                    sha_to_tags[new_sha] = sha_to_tags[sha]
+                    seen_shas_this_run.add(new_sha)
+                processed += 1
+            except Exception as e:  # broad: log + continue
+                cat.mark_error(sha, str(e))
+                errored += 1
+                typer.echo(f"  error on {path.name}: {e}", err=True)
+            pbar.update(1)
+    pbar.close()
 
     cat.finish_run(run_id, processed=processed, skipped=skipped, errored=errored)
     cat.close()
@@ -366,6 +411,52 @@ def _run_taggers(path: Path, taggers: list[Tagger], config: Config) -> tuple[lis
         if caption is None and result.caption:
             caption = result.caption
     return filter_tags(raw_tags, config), caption
+
+
+def _run_taggers_batch(
+    images: list[Image.Image],
+    taggers: list[Tagger],
+    config: Config,
+) -> list[tuple[list[Tag], str | None]]:
+    """Batched form of _run_taggers. Each tagger.tag_batch runs once over the
+    full image list; results are merged per-image. OOM is handled by halving
+    the batch and recursing, falling back to single-image resize retry."""
+    n = len(images)
+    per_image_tags: list[list[Tag]] = [[] for _ in range(n)]
+    per_image_caption: list[str | None] = [None] * n
+    for t in taggers:
+        results = _tag_batch_with_retry(t, images)
+        for idx, r in enumerate(results):
+            per_image_tags[idx].extend(r.tags)
+            if per_image_caption[idx] is None and r.caption:
+                per_image_caption[idx] = r.caption
+    return [
+        (filter_tags(tags, config), cap)
+        for tags, cap in zip(per_image_tags, per_image_caption)
+    ]
+
+
+def _tag_batch_with_retry(tagger: Tagger, images: list[Image.Image]) -> list[TagResult]:
+    """Call tagger.tag_batch(images). On OOM, halve and recurse; at batch
+    size 1, fall back to _tag_with_retry's resize ladder. Taggers that don't
+    implement tag_batch get per-image dispatch via _tag_with_retry."""
+    if not images:
+        return []
+    if not hasattr(tagger, "tag_batch"):
+        return [_tag_with_retry(tagger, img) for img in images]
+    try:
+        return tagger.tag_batch(images)
+    except Exception as e:
+        msg = str(e).lower()
+        if "out of memory" not in msg and "oom" not in msg:
+            raise
+        if len(images) == 1:
+            return [_tag_with_retry(tagger, images[0])]
+        mid = len(images) // 2
+        return (
+            _tag_batch_with_retry(tagger, images[:mid])
+            + _tag_batch_with_retry(tagger, images[mid:])
+        )
 
 
 def _reconstitute_tags_from_catalog(sha: str, cat: Catalog) -> tuple[list[Tag], str | None]:

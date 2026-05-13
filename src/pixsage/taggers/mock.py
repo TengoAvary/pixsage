@@ -29,3 +29,6 @@ class MockTagger:
             raise RuntimeError("MockTagger.load() not called")
         tags = [Tag(name=n, confidence=c, hierarchy=None, source=self.name) for n, c in self._tags]
         return TagResult(tags=tags, caption=self._caption)
+
+    def tag_batch(self, images: list[Image.Image]) -> list[TagResult]:
+        return [self.tag(img) for img in images]

@@ -33,15 +33,19 @@ class RamPlusPlusTagger:
         self._model = model.to(device)
 
     def tag(self, image: Image.Image) -> TagResult:
-        import torch
-        from ram import inference_ram
+        return self.tag_batch([image])[0]
 
-        x = self._transform(image).unsqueeze(0).to(self._device)
+    def tag_batch(self, images: list[Image.Image]) -> list[TagResult]:
+        import torch
+
+        if not images:
+            return []
+        batch = torch.stack([self._transform(img) for img in images]).to(self._device)
         with torch.no_grad():
-            tags_string, _ = inference_ram(x, self._model)
-        # `inference_ram` returns a string of English tags separated by " | ".
-        labels = [s.strip() for s in tags_string.split("|") if s.strip()]
-        # RAM++ does not surface per-tag confidences via this entrypoint;
-        # we synthesize confidence 1.0 (filter handles thresholding).
-        tags = [Tag(name=lbl, confidence=1.0, hierarchy=None, source="ram++") for lbl in labels]
-        return TagResult(tags=tags, caption=None)
+            tag_strings, _ = self._model.generate_tag(batch)
+        out: list[TagResult] = []
+        for tags_string in tag_strings:
+            labels = [s.strip() for s in tags_string.split("|") if s.strip()]
+            tags = [Tag(name=lbl, confidence=1.0, hierarchy=None, source="ram++") for lbl in labels]
+            out.append(TagResult(tags=tags, caption=None))
+        return out
