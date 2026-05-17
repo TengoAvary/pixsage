@@ -208,6 +208,8 @@ INDEX_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <title>pixsage pipeline</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 1.5em; }
@@ -233,6 +235,12 @@ h1 { color: #58a6ff; margin: 0 0 0.2em 0; font-size: 1.6em; }
 .stage-pill.idle { background: #30363d; color: #8b949e; }
 .tail { font-family: 'SF Mono', Consolas, monospace; font-size: 0.7em; color: #6e7681; padding: 0.5em 0.8em; word-break: break-all; max-height: 4.5em; overflow: hidden; background: #0d1117; border-radius: 4px; margin-top: 0.4em; }
 .metric-big { font-size: 1.4em; font-family: monospace; color: #f0f6fc; }
+#mapwrap { max-width: 1200px; margin-top: 1.5em; display: none; }
+#mapwrap .card { padding: 0; overflow: hidden; }
+#mapwrap .maphdr { display: flex; justify-content: space-between; align-items: center; padding: 1em 1.4em; }
+#mapwrap h2 { margin: 0; font-size: 0.95em; color: #58a6ff; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+#geomap { height: 460px; width: 100%; background: #0d1117; }
+.leaflet-popup-content { font-family: monospace; font-size: 12px; }
 @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -240,7 +248,56 @@ h1 { color: #58a6ff; margin: 0 0 0.2em 0; font-size: 1.6em; }
 <h1>pixsage pipeline</h1>
 <div class="subtitle" id="header">connecting…</div>
 <div id="root"></div>
+<div id="mapwrap">
+  <div class="card">
+    <div class="maphdr">
+      <h2>geoclip guesses (live)</h2>
+      <span class="value" id="mapcount" style="color:#8b949e">0 points</span>
+    </div>
+    <div id="geomap"></div>
+  </div>
+</div>
 <script>
+let gmap = null, gLayer = null, gDrawn = 0, gFitted = false;
+async function refreshGeo() {
+  try {
+    const r = await fetch('/api/geo');
+    const g = await r.json();
+    if (!g.points || g.points.length === 0) return;
+    document.getElementById('mapwrap').style.display = 'block';
+    document.getElementById('mapcount').textContent =
+      g.count.toLocaleString() + ' points';
+    if (!gmap) {
+      gmap = L.map('geomap', { worldCopyJump: true });
+      const sat = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Imagery &copy; Esri' });
+      const streets = L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
+        { maxZoom: 19, attribution: '&copy; OSM, &copy; CARTO', subdomains: 'abcd' });
+      streets.addTo(gmap);
+      L.control.layers({ 'Streets': streets, 'Satellite': sat }, null,
+        { position: 'topleft' }).addTo(gmap);
+      gLayer = L.layerGroup().addTo(gmap);
+      gmap.setView([20, 0], 2);
+    }
+    const fresh = g.points.slice(gDrawn);
+    const bounds = L.latLngBounds();
+    for (const p of fresh) {
+      const [lat, lon] = p;
+      L.circleMarker([lat, lon], {
+        radius: 3, color: '#a371f7', weight: 1,
+        fillColor: '#a371f7', fillOpacity: 0.55
+      }).bindPopup(lat.toFixed(4) + ', ' + lon.toFixed(4)).addTo(gLayer);
+      bounds.extend([lat, lon]);
+    }
+    gDrawn = g.points.length;
+    if (!gFitted && fresh.length && bounds.isValid()) {
+      gmap.fitBounds(bounds, { padding: [30, 30], maxZoom: 6 });
+      gFitted = true;
+    }
+  } catch (e) { /* transient; next tick retries */ }
+}
 async function refresh() {
   try {
     const r = await fetch('/api/state');
@@ -336,6 +393,8 @@ function render(s) {
 }
 refresh();
 setInterval(refresh, 2000);
+refreshGeo();
+setInterval(refreshGeo, 5000);
 </script>
 </body>
 </html>
@@ -345,6 +404,29 @@ setInterval(refresh, 2000);
 @app.get("/")
 def index() -> HTMLResponse:
     return HTMLResponse(INDEX_HTML)
+
+
+@app.get("/api/geo")
+def geo() -> JSONResponse:
+    """GeoCLIP top-1 guesses, ordered by write time so the client can append
+    only the new tail each poll (smooth even at 30k+ points). Coordinates
+    rounded to 3 dp (~110 m) to keep the payload small."""
+    db = PHOTOINDEX / "catalog.db"
+    if not db.exists():
+        return JSONResponse({"points": [], "count": 0})
+    con = sqlite3.connect(db)
+    try:
+        cur = con.execute(
+            "SELECT latitude, longitude FROM geo_predictions "
+            "WHERE model='geoclip' AND rank=0 "
+            "ORDER BY created_at, sha256"
+        )
+        pts = [[round(lat, 3), round(lon, 3)] for lat, lon in cur.fetchall()]
+    except sqlite3.OperationalError:
+        pts = []  # table not created yet (geolocate hasn't started)
+    finally:
+        con.close()
+    return JSONResponse({"points": pts, "count": len(pts)})
 
 
 @app.get("/api/state")
