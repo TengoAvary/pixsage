@@ -3,6 +3,7 @@
 {% set has_any_enabled = entries | selectattr("enabled") | selectattr("available") | list | length > 0 %}
 <details class="catalogs-panel" {% if not has_any_enabled %}open{% endif %}>
   <summary>Catalogs ({{ entries | length }})</summary>
+  {% if notice %}<p class="catalog-notice">{{ notice }}</p>{% endif %}
   {% if entries %}
     <ul class="catalog-list">
       {% for entry in entries %}
