@@ -10,7 +10,7 @@ from pixsage.catalog import Catalog
 from pixsage.embedders.base import Embedder
 from pixsage.images import load_image
 from pixsage.registry import DEFAULT_IMAGE_SIGNATURE, DEFAULT_CAPTION_SIGNATURE
-from pixsage.vectors import VectorStore
+from pixsage.vectors import VectorStore, _now
 from pixsage.xmp import needs_sidecar, read_xmp
 
 
@@ -75,6 +75,11 @@ class EmbedRunner:
         self.embed_caption = embed_caption
         self.progress = progress
 
+    # Vectors are buffered and flushed in chunks so the parquet write cost is
+    # O(rows) total instead of O(rows^2): each flush writes its own part-file
+    # via VectorStore.extend rather than rewriting the whole store per photo.
+    FLUSH_EVERY = 256
+
     def run(self) -> dict[str, int]:
         info = self.embedder.info
         stats = {"processed": 0, "skipped": 0, "errored": 0}
@@ -85,6 +90,25 @@ class EmbedRunner:
             iterator = tqdm(rows, unit="photo")
         else:
             iterator = rows
+
+        # One-shot skip index. Reading per-photo would be O(n^2) on the
+        # accumulating parquet — the original performance bug. We read the
+        # sha/created_at columns once and keep the picture in memory,
+        # updating it as we flush.
+        img_index: set[str] = set(self.vectors.index(info.image_kind).keys())
+        txt_index: dict[str, str] = dict(self.vectors.index(info.text_kind))
+
+        img_buf: list[tuple[str, np.ndarray]] = []
+        txt_buf: list[tuple[str, np.ndarray]] = []
+        run_ts = _now()
+
+        def flush() -> None:
+            if img_buf:
+                self.vectors.extend(info.image_kind, img_buf)
+                img_buf.clear()
+            if txt_buf:
+                self.vectors.extend(info.text_kind, txt_buf)
+                txt_buf.clear()
 
         for row in iterator:
             sha = row["sha256"]
@@ -106,12 +130,17 @@ class EmbedRunner:
                     pass
 
             needs_image = self.embed_image and (
-                self.force or self.vectors.get_one(info.image_kind, sha) is None
+                self.force or sha not in img_index
+            )
+            stale = (
+                caption_updated_at is not None
+                and (
+                    sha not in txt_index
+                    or caption_updated_at > txt_index[sha]
+                )
             )
             needs_text = self.embed_caption and caption is not None and (
-                self.force
-                or self.vectors.get_one(info.text_kind, sha) is None
-                or self._caption_is_stale(info.text_kind, sha, caption_updated_at)
+                self.force or sha not in txt_index or stale
             )
 
             if not needs_image and not needs_text:
@@ -122,14 +151,18 @@ class EmbedRunner:
                 if needs_image:
                     img = load_image(Path(current_path))
                     img_vec = self.embedder.embed_image([img])[0]
-                    self.vectors.append(info.image_kind, [(sha, img_vec)])
+                    img_buf.append((sha, img_vec))
+                    img_index.add(sha)
 
                 if needs_text:
                     txt_vec = self.embedder.embed_caption([normalize_caption_for_embedding(caption)])[0]
-                    self.vectors.append(info.text_kind, [(sha, txt_vec)])
+                    txt_buf.append((sha, txt_vec))
+                    txt_index[sha] = run_ts
 
                 self.catalog.clear_error(sha)
                 stats["processed"] += 1
+                if len(img_buf) >= self.FLUSH_EVERY or len(txt_buf) >= self.FLUSH_EVERY:
+                    flush()
             except Exception as e:
                 self.catalog.mark_error(sha, str(e))
                 stats["errored"] += 1
@@ -139,6 +172,8 @@ class EmbedRunner:
                     tqdm.write(msg, file=sys.stderr)
                 else:
                     sys.stderr.write(msg + "\n")
+
+        flush()
 
         # Record which embedder produced these vectors so a future cross-catalog
         # search can detect mismatched encoders. TODO(multi-embedder): currently
@@ -153,11 +188,3 @@ class EmbedRunner:
             self.catalog.set_meta("caption_embedder_signature", DEFAULT_CAPTION_SIGNATURE)
 
         return stats
-
-    def _caption_is_stale(self, kind: str, sha: str, caption_updated_at: str | None) -> bool:
-        if caption_updated_at is None:
-            return False
-        vec_ts = self.vectors.created_at(kind, sha)
-        if vec_ts is None:
-            return True
-        return caption_updated_at > vec_ts

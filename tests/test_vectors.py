@@ -77,3 +77,55 @@ def test_append_rejects_non_float32(store: VectorStore):
 def test_append_rejects_non_1d(store: VectorStore):
     with pytest.raises(ValueError, match="must be 1-D"):
         store.append("siglip2_image", [("sha1", np.array([[1.0, 0.0]], dtype=np.float32))])
+
+
+def test_extend_writes_partfile_without_rewriting(store: VectorStore):
+    """Each extend() is its own part-file; earlier files are never touched."""
+    store.extend("siglip2_image", [("sha1", np.array([1.0, 0.0], dtype=np.float32))])
+    parts_after_first = sorted((store.root / "siglip2_image").glob("*.parquet"))
+    first = parts_after_first[0]
+    first_mtime = first.stat().st_mtime_ns
+
+    store.extend("siglip2_image", [("sha2", np.array([0.0, 1.0], dtype=np.float32))])
+    parts_after_second = sorted((store.root / "siglip2_image").glob("*.parquet"))
+
+    assert len(parts_after_first) == 1
+    assert len(parts_after_second) == 2
+    # The first part-file was not rewritten.
+    assert first.stat().st_mtime_ns == first_mtime
+    # Legacy single file is never created by extend.
+    assert not (store.root / "siglip2_image.parquet").exists()
+
+    sha_array, matrix = store.load("siglip2_image")
+    assert sorted(sha_array) == ["sha1", "sha2"]
+    assert matrix.shape == (2, 2)
+
+
+def test_extend_merges_with_legacy_file_last_write_wins(store: VectorStore):
+    """A legacy single file plus newer part-files merge; part-files win."""
+    store.append("siglip2_image", [("sha1", np.array([1.0, 1.0], dtype=np.float32))])
+    assert (store.root / "siglip2_image.parquet").exists()  # legacy
+
+    store.extend("siglip2_image", [("sha1", np.array([9.0, 9.0], dtype=np.float32)),
+                                   ("sha2", np.array([2.0, 2.0], dtype=np.float32))])
+
+    np.testing.assert_array_equal(store.get_one("siglip2_image", "sha1"), [9.0, 9.0])
+    np.testing.assert_array_equal(store.get_one("siglip2_image", "sha2"), [2.0, 2.0])
+
+
+def test_extend_write_cost_is_constant_not_quadratic(store: VectorStore):
+    """Writing N batches must not rewrite prior data — total bytes written
+    grows linearly with rows, not with rows^2. Proxy: every part-file holds
+    only its own batch's rows, independent of how many came before."""
+    for i in range(20):
+        store.extend("siglip2_image", [(f"sha{i}", np.array([float(i), 0.0], dtype=np.float32))])
+
+    import pyarrow.parquet as pq
+    parts = sorted((store.root / "siglip2_image").glob("*.parquet"))
+    assert len(parts) == 20
+    # Each part-file is exactly one row — no accumulation/rewrite.
+    for p in parts:
+        assert pq.read_table(p).num_rows == 1
+
+    shas, matrix = store.load("siglip2_image")
+    assert len(shas) == 20

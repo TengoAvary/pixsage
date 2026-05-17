@@ -151,3 +151,47 @@ def test_runner_backfills_caption_from_xmp(catalog: Catalog, store: VectorStore,
     assert row["caption"] == "backfilled caption"
     # And caption vector should exist
     assert store.get_one("mock_text", "sha-x") is not None
+
+
+def test_runner_buffers_and_flushes_in_chunks(catalog: Catalog, store: VectorStore, tmp_path: Path, monkeypatch):
+    """Many photos must not trigger a vector write per photo. With FLUSH_EVERY
+    photos we expect ~ceil(n/FLUSH_EVERY) extend() calls per kind, not n."""
+    n = 50
+    for i in range(n):
+        p = tmp_path / f"img{i}.jpg"
+        _seed_photo(catalog, f"sha{i}", p, caption=f"caption {i}")
+
+    extend_calls = {"count": 0}
+    real_extend = store.extend
+    monkeypatch.setattr(
+        store, "extend",
+        lambda kind, rows: (extend_calls.__setitem__("count", extend_calls["count"] + 1),
+                            real_extend(kind, rows))[1],
+    )
+
+    runner = EmbedRunner(catalog=catalog, vectors=store, embedder=MockEmbedder(dim=8))
+    runner.FLUSH_EVERY = 16
+    stats = runner.run()
+
+    assert stats["processed"] == n
+    # 50 photos, flush every 16 -> 3 mid-run flushes + 1 final, x2 kinds.
+    # Far fewer than 2*n=100 writes; assert it's bounded well below n.
+    assert extend_calls["count"] <= 2 * (n // 16 + 2)
+
+    shas_img, mat_img = store.load("mock_image")
+    shas_txt, mat_txt = store.load("mock_text")
+    assert len(shas_img) == n
+    assert len(shas_txt) == n
+
+
+def test_runner_final_flush_writes_remainder(catalog: Catalog, store: VectorStore, tmp_path: Path):
+    """Photos below the flush threshold must still be persisted by the final flush."""
+    for i in range(5):
+        _seed_photo(catalog, f"sha{i}", tmp_path / f"img{i}.jpg", caption=f"c{i}")
+
+    runner = EmbedRunner(catalog=catalog, vectors=store, embedder=MockEmbedder(dim=8))
+    runner.FLUSH_EVERY = 1000  # never hits mid-run flush
+    runner.run()
+
+    shas_img, _ = store.load("mock_image")
+    assert len(shas_img) == 5
