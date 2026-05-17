@@ -38,7 +38,6 @@ def test_app_state_has_path_resolver(tmp_path: Path) -> None:
         photo_root=photo_root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     cid = _first_catalog_id(app)
     resolver = app.state.path_resolvers[cid]
@@ -79,7 +78,6 @@ def test_thumb_route_resolves_translated_path(tmp_path: Path) -> None:
         photo_root=photo_root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     cid = _first_catalog_id(app)
     client = TestClient(app)
@@ -118,7 +116,6 @@ def test_serves_legacy_catalog_without_photo_root_meta(tmp_path: Path) -> None:
         photo_root=photo_root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     cid = _first_catalog_id(app)
     client = TestClient(app)

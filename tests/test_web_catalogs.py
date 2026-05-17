@@ -35,7 +35,7 @@ def test_panel_renders_two_catalogs(tmp_path: Path) -> None:
             caption_embedder_signature="minilm-L6-v2@v2")
     reg.save()
 
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
@@ -46,7 +46,7 @@ def test_panel_renders_two_catalogs(tmp_path: Path) -> None:
 def test_panel_renders_empty_state_when_no_catalogs(tmp_path: Path) -> None:
     from pixsage.web.app import build_app
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
@@ -64,7 +64,7 @@ def test_panel_shows_offline_for_unreachable_path(tmp_path: Path) -> None:
             caption_embedder_signature="y")
     reg.save()
 
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
@@ -86,7 +86,7 @@ def test_toggle_disables_catalog(tmp_path: Path) -> None:
                 caption_embedder_signature="minilm-L6-v2@v2")
     reg.save()
 
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post(f"/catalogs/{e.id}/toggle", follow_redirects=False)
         assert r.status_code in (302, 303)
@@ -99,7 +99,7 @@ def test_toggle_disables_catalog(tmp_path: Path) -> None:
 def test_toggle_unknown_id_returns_404(tmp_path: Path) -> None:
     from pixsage.web.app import build_app
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post("/catalogs/nonexistent/toggle")
         assert r.status_code == 404
@@ -111,7 +111,7 @@ def test_add_catalog_with_valid_path(tmp_path: Path) -> None:
     _make_catalog(sony / ".photoindex", photo_root=sony)
 
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post(
             "/catalogs/add",
@@ -132,7 +132,7 @@ def test_add_catalog_with_missing_photoindex(tmp_path: Path) -> None:
     bare.mkdir()
 
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post("/catalogs/add", data={"path": str(bare.resolve())})
         assert r.status_code == 400
@@ -142,7 +142,7 @@ def test_add_catalog_with_missing_photoindex(tmp_path: Path) -> None:
 def test_add_catalog_with_nonexistent_path(tmp_path: Path) -> None:
     from pixsage.web.app import build_app
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post("/catalogs/add", data={"path": "/totally/fake/path"})
         assert r.status_code == 400
@@ -163,7 +163,7 @@ def test_remove_deletes_from_registry(tmp_path: Path) -> None:
                 caption_embedder_signature="minilm-L6-v2@v2")
     reg.save()
 
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post(f"/catalogs/{e.id}/remove", follow_redirects=False)
         assert r.status_code in (302, 303)
@@ -186,7 +186,7 @@ def test_rename_updates_label(tmp_path: Path) -> None:
                 caption_embedder_signature="y")
     reg.save()
 
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         r = client.post(f"/catalogs/{e.id}/rename",
                         data={"label": "α7c Sony"}, follow_redirects=False)
@@ -204,7 +204,7 @@ def test_rescan_picks_up_new_catalog(tmp_path: Path, monkeypatch) -> None:
     _make_catalog(sony / ".photoindex", photo_root=sony)
 
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
 
     # Stub list_mounted_roots so rescan sees tmp_path as a root.
     monkeypatch.setattr(discovery_mod, "list_mounted_roots", lambda: [tmp_path])
@@ -228,7 +228,7 @@ def test_rescan_reloads_after_offline_then_back(tmp_path: Path, monkeypatch) -> 
     _make_catalog(sony / ".photoindex", photo_root=sony)
 
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
 
     # Step 1: rescan picks up Sony, loads it.
     monkeypatch.setattr(discovery_mod, "list_mounted_roots", lambda: [tmp_path])
@@ -263,7 +263,7 @@ def test_add_catalog_with_photoindex_path_directly_uses_parent_label(tmp_path: P
     _make_catalog(sony / ".photoindex", photo_root=sony)
 
     registry_path = tmp_path / "catalogs.json"
-    app = build_app(registry_path=registry_path, embedder_name="mock", skip_discovery=True)
+    app = build_app(registry_path=registry_path, embedder_name="mock")
     with TestClient(app) as client:
         photoindex_path = (sony / ".photoindex").resolve()
         r = client.post("/catalogs/add", data={"path": str(photoindex_path)},

@@ -53,7 +53,6 @@ def build_app(
     embedder_name: str = "siglip2",
     *,
     experimental_cluster_labelling: bool = False,
-    skip_discovery: bool = False,
 ) -> FastAPI:
     """Construct the FastAPI app for multi-catalog search.
 
@@ -63,8 +62,6 @@ def build_app(
         registry_path: Override for the catalogs.json location.
         embedder_name: Which embedder to use for query encoding.
         experimental_cluster_labelling: Off by default. See routes.py.
-        skip_discovery: If True, don't scan mounted drives on startup.
-            Useful in tests to avoid touching /Volumes/.
     """
     registry_path = registry_path or default_registry_path()
     registry = Registry(registry_path)
@@ -83,13 +80,10 @@ def build_app(
                 caption_embedder_signature=cap_sig,
             )
 
-    # Discovery + availability reconciliation.
-    if not skip_discovery:
-        from pixsage.discovery import list_mounted_roots, walk_for_photoindex
-        discovered = walk_for_photoindex(list_mounted_roots())
-        registry.refresh_from_discovery(discovered)
-    else:
-        registry.refresh_from_discovery(discovered_paths=[])
+    # No startup discovery walk — catalogs enter the registry only via the
+    # folder-browser picker (POST /catalogs/add-scan) or an explicit
+    # photo_root arg. Startup only re-checks which registered paths exist.
+    registry.refresh_availability()
     registry.save()
 
     # Build the embedder once (shared by all SearchServices).

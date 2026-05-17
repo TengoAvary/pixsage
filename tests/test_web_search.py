@@ -62,7 +62,6 @@ def test_search_returns_results_html(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/", params={"q": "a red square", "image_weight": "0.0"})
@@ -79,7 +78,6 @@ def test_search_empty_query_returns_empty_results(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/", params={"q": "", "image_weight": "0.5"})
@@ -96,7 +94,6 @@ def test_thumb_route_returns_jpeg(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -114,7 +111,6 @@ def test_thumb_route_404_for_missing_sha(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -130,7 +126,6 @@ def test_photo_detail_renders_caption_and_filename(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -149,7 +144,6 @@ def test_photo_detail_404(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -165,7 +159,6 @@ def test_similar_returns_results_excluding_self(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -185,7 +178,6 @@ def test_similar_404_when_photo_missing(tmp_path: Path):
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         cid = _catalog_id(client)
@@ -225,7 +217,7 @@ def test_result_card_shows_catalog_badge_in_multi_mode(tmp_path: Path) -> None:
     reg.save()
 
     app = build_app(registry_path=tmp_path / "catalogs.json",
-                    embedder_name="mock", skip_discovery=True)
+                    embedder_name="mock")
     with TestClient(app) as client:
         r = client.get("/", params={"q": "anything"})
         assert r.status_code == 200
@@ -245,7 +237,6 @@ def test_result_card_no_badge_in_single_catalog_mode(tmp_path: Path) -> None:
         photo_root=root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/", params={"q": "a red square", "image_weight": "0.0"})

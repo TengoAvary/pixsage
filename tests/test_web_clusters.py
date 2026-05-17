@@ -43,7 +43,6 @@ def _build_app_with_fake_clusters(photo_root: Path):
         registry_path=registry_path,
         embedder_name="mock",
         experimental_cluster_labelling=True,
-        skip_discovery=True,
     )
     cat = next(iter(app.state.catalogs.values()))
     shas = [r["sha256"] for r in cat._conn.execute(  # noqa: SLF001
@@ -132,7 +131,6 @@ def test_cluster_routes_404_when_flag_off(tmp_path: Path):
         photo_root=photo_root,
         registry_path=tmp_path / "catalogs.json",
         embedder_name="mock",
-        skip_discovery=True,
     )  # flag off by default
     client = TestClient(app)
     assert client.get("/explore").status_code == 404
