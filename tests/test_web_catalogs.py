@@ -274,3 +274,28 @@ def test_add_catalog_with_photoindex_path_directly_uses_parent_label(tmp_path: P
         entries = list(reg2.entries())
         assert len(entries) == 1
         assert entries[0].label == "Sony"  # NOT ".photoindex"
+
+
+def test_browse_lists_child_dirs_and_photoindex_hint(tmp_path):
+    from pixsage.web.app import build_app
+    (tmp_path / "Sony").mkdir()
+    (tmp_path / "Sony" / ".photoindex").mkdir()
+    (tmp_path / "Empty").mkdir()
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/catalogs/browse", params={"path": str(tmp_path)})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["path"] == str(tmp_path.resolve())
+        names = {e["name"]: e for e in body["entries"]}
+        assert names["Sony"]["has_photoindex"] is True
+        assert names["Empty"]["has_photoindex"] is False
+        assert body["parent"] == str(tmp_path.resolve().parent)
+
+
+def test_browse_rejects_bad_path(tmp_path):
+    from pixsage.web.app import build_app
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/catalogs/browse", params={"path": str(tmp_path / "nope")})
+        assert r.status_code == 400
