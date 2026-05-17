@@ -242,3 +242,16 @@ def test_refresh_marks_offline_then_back(tmp_path):
         offline.rename(s / ".photoindex")
         client.post("/catalogs/refresh")
         assert len(app.state.multi_search.catalog_ids()) == 1
+
+
+def test_index_has_folder_browser_modal(tmp_path):
+    from pixsage.web.app import build_app
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/")
+        assert r.status_code == 200
+        assert 'id="catalog-browser"' in r.text
+        assert "/catalogs/add-scan" in r.text
+        assert "/catalogs/refresh" in r.text
+        assert "/catalogs/rescan" not in r.text
+        assert "/catalogs/add\"" not in r.text
