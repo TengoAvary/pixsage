@@ -269,3 +269,29 @@ def test_refresh_does_not_duplicate_known_path(tmp_path: Path, monkeypatch) -> N
     )
     reg.refresh_from_discovery(discovered_paths=[photoindex.resolve()])
     assert len(list(reg.entries())) == 1
+
+
+def test_refresh_availability_marks_existing(tmp_path: Path) -> None:
+    pi = tmp_path / "Sony" / ".photoindex"
+    pi.mkdir(parents=True)
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    reg.add(photoindex_path=str(pi.resolve()), label="Sony",
+            image_embedder_signature="i", caption_embedder_signature="c")
+    before = list(reg.entries())[0].last_seen
+    reg.refresh_availability()
+    e = list(reg.entries())[0]
+    assert e.available is True
+    assert e.last_seen >= before
+    assert e.last_seen.endswith("Z")
+
+
+def test_refresh_availability_marks_offline_and_adds_nothing(tmp_path: Path) -> None:
+    reg = Registry(tmp_path / "catalogs.json")
+    reg.load()
+    reg.add(photoindex_path="/Volumes/NotMounted/.photoindex", label="Gone",
+            image_embedder_signature="i", caption_embedder_signature="c")
+    reg.refresh_availability()
+    entries = list(reg.entries())
+    assert len(entries) == 1          # never adds
+    assert entries[0].available is False
