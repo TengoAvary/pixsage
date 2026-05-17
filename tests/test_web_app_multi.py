@@ -31,7 +31,6 @@ def test_build_app_with_empty_registry_serves_empty_state(tmp_path: Path) -> Non
     app = build_app(
         registry_path=registry_path,
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/")
@@ -50,7 +49,6 @@ def test_build_app_with_single_photo_root_auto_registers(tmp_path: Path) -> None
         registry_path=registry_path,
         photo_root=photo_root,
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/")
@@ -96,7 +94,6 @@ def test_build_app_loads_two_catalogs_from_registry(tmp_path: Path) -> None:
     app = build_app(
         registry_path=registry_path,
         embedder_name="mock",
-        skip_discovery=True,
     )
     with TestClient(app) as client:
         r = client.get("/")
