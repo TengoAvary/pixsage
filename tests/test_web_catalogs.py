@@ -244,6 +244,35 @@ def test_refresh_marks_offline_then_back(tmp_path):
         assert len(app.state.multi_search.catalog_ids()) == 1
 
 
+def test_add_scan_empty_reports_notice(tmp_path):
+    from pixsage.web.app import build_app
+    (tmp_path / "plain").mkdir()
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.post("/catalogs/add-scan", data={"path": str(tmp_path / "plain")},
+                         follow_redirects=False)
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert "notice=" in loc
+        assert "nothing%20added" in loc or "nothing+added" in loc
+
+
+def test_add_scan_success_reports_count_and_renders_notice(tmp_path):
+    from pixsage.web.app import build_app
+    s = tmp_path / "Sony"
+    _make_catalog(s / ".photoindex", photo_root=s)
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.post("/catalogs/add-scan", data={"path": str(tmp_path)},
+                         follow_redirects=False)
+        assert r.status_code == 303
+        assert "Added%201" in r.headers["location"]
+        # notice renders on the page
+        r2 = client.get("/", params={"notice": "Added 1 catalog(s)"})
+        assert "Added 1 catalog(s)" in r2.text
+        assert 'class="catalog-notice"' in r2.text
+
+
 def test_index_has_folder_browser_modal(tmp_path):
     from pixsage.web.app import build_app
     app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")

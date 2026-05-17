@@ -22,6 +22,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         request: Request,
         q: str = "",
         image_weight: float | None = None,
+        notice: str | None = None,
     ) -> HTMLResponse:
         templates = app.state.templates
         config = app.state.config
@@ -77,6 +78,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
                 "hits": hits,
                 "registry": registry,
                 "multi_catalog": enabled_count > 1,
+                "notice": notice,
             },
         )
 
@@ -137,7 +139,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             base = base.resolve()
         except OSError:
             raise HTTPException(status_code=400, detail=f"bad path: {path}")
-        if not (base.exists() and base.is_dir()):
+        if not safe_is_dir(base):
             raise HTTPException(status_code=400, detail=f"not a directory: {base}")
 
         entries = []
@@ -169,6 +171,8 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
 
     @app.post("/catalogs/add-scan")
     def add_scan(path: str = Form(...)) -> RedirectResponse:
+        from urllib.parse import quote
+
         from pixsage import discovery
         from pixsage.registry import derive_signatures
 
@@ -177,8 +181,10 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         if not (root.exists() and root.is_dir()):
             raise HTTPException(status_code=400, detail=f"not a directory: {root}")
 
-        found = discovery.walk_for_photoindex([root])
-        for pi in found:
+        found_paths = discovery.walk_for_photoindex([root])
+        found = len(found_paths)
+        added = 0
+        for pi in found_paths:
             pi = Path(pi)
             if registry.find_by_photoindex_path(str(pi)) is not None:
                 continue
@@ -191,8 +197,20 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             )
             entry.available = True
             _load_catalog_into_multi(app, entry)
+            added += 1
         registry.save()
-        return RedirectResponse(url="/", status_code=303)
+
+        skipped = found - added
+        if found == 0:
+            msg = f"No indexed catalogs found under {root} — nothing added"
+        elif skipped == 0:
+            msg = f"Added {added} catalog(s)"
+        elif added == 0:
+            msg = f"All {skipped} catalog(s) under {root} already registered"
+        else:
+            msg = f"Added {added}; {skipped} already registered"
+
+        return RedirectResponse(url=f"/?notice={quote(msg)}", status_code=303)
 
     @app.post("/catalogs/{catalog_id}/remove")
     def remove_catalog(catalog_id: str) -> RedirectResponse:
