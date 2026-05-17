@@ -139,6 +139,20 @@ class Registry:
             raise KeyError(f"no catalog with id {id!r}")
         e.available = available
 
+    def refresh_availability(self) -> None:
+        """Re-check whether each registered catalog's path currently exists.
+
+        Pure existence check — no filesystem walk, never adds or removes
+        entries. Called at startup and by the availability-refresh route so
+        a (re)plugged drive flips online/offline without crawling disks.
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        for e in self._entries:
+            e.available = Path(e.photoindex_path).exists()
+            if e.available:
+                e.last_seen = now
+
     def refresh_from_discovery(self, discovered_paths: list[Path]) -> None:
         """Reconcile the registry against the filesystem.
 
