@@ -43,3 +43,11 @@ tests/demo_corpus/
 pytest_output.txt
 .smoke.log
 exports/
+
+# Session scratch / per-run pipeline artifacts (machine-specific:
+# hardcoded drive paths, runtime logs, generated maps). The portable
+# tool that produces the map lives at scripts/build_iphone_map.py.
+.h2026-*
+.iphone-*
+.dashboard.log
+.serve*.log
