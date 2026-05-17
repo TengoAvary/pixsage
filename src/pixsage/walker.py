@@ -33,6 +33,11 @@ def walk_photos(root: Path) -> Iterator[Path]:
             continue
         if PHOTOINDEX_DIR in p.parts:
             continue
+        # macOS AppleDouble resource-fork stubs (._<name>) appear next to
+        # real files on exFAT/FAT drives. They carry the image extension but
+        # are tiny non-image blobs — never decodable, just error noise.
+        if p.name.startswith("._"):
+            continue
         if p.suffix.lower() in IMAGE_EXTENSIONS:
             yield p
 

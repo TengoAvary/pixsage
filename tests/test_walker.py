@@ -33,6 +33,18 @@ def test_walk_photos_skips_photoindex_dir(tmp_path: Path, make_jpeg):
     assert found == ["ok.jpg"]
 
 
+def test_walk_photos_skips_appledouble_files(tmp_path: Path, make_jpeg):
+    """macOS writes ._<name> resource-fork stubs alongside real files on
+    exFAT/FAT drives. They carry an image extension but are not images;
+    skip them so they never reach the decoders."""
+    make_jpeg("DSC0001.jpg")
+    # AppleDouble companion — same extension, not an image.
+    Path(tmp_path / "._DSC0001.jpg").write_bytes(b"\x00\x05\x16\x07not-an-image")
+    Path(tmp_path / "._DSC0002.arw").write_bytes(b"\x00\x05\x16\x07not-an-image")
+    found = [p.name for p in walk_photos(tmp_path)]
+    assert found == ["DSC0001.jpg"]
+
+
 def test_image_extensions_includes_common_raws_and_jpegs():
     assert ".jpg" in IMAGE_EXTENSIONS
     assert ".heic" in IMAGE_EXTENSIONS
