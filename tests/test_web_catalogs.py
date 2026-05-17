@@ -284,3 +284,12 @@ def test_index_has_folder_browser_modal(tmp_path):
         assert "/catalogs/refresh" in r.text
         assert "/catalogs/rescan" not in r.text
         assert "/catalogs/add\"" not in r.text
+
+
+def test_add_scan_rejects_bad_path(tmp_path):
+    from pixsage.web.app import build_app
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.post("/catalogs/add-scan", data={"path": str(tmp_path / "nope")},
+                         follow_redirects=False)
+        assert r.status_code == 400

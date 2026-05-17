@@ -178,7 +178,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
 
         registry = app.state.registry
         root = Path(path).expanduser()
-        if not (root.exists() and root.is_dir()):
+        if not discovery.safe_is_dir(root):
             raise HTTPException(status_code=400, detail=f"not a directory: {root}")
 
         found_paths = discovery.walk_for_photoindex([root])
