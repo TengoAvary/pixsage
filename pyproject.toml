@@ -50,10 +50,13 @@ search = [
   "sentence-transformers>=3.0",
 ]
 serve = [
-  # Subset of [taggers] + [search] needed at serve time. No rawpy / ram —
-  # those are tag/embed-time only. The launcher runtime ships exactly this
-  # set, so keep it minimal.
+  # Subset of [taggers] + [search] needed at serve time. No `ram` — the
+  # recognize-anything tagging model is tag/embed-time only. `rawpy` IS
+  # needed: the thumbnail route renders RAW (.arw/.cr2/.nef/...) via
+  # pixsage.images.load_image, so a runtime without it 500s on every RAW
+  # /thumb. Keep this set minimal but it must cover serve's real work.
   "torch>=2.2",
+  "rawpy>=0.21",
   # transformers' SiglipImageProcessorFast (used by AutoProcessor with
   # use_fast=True for SigLIP2) imports torchvision at construction time.
   # [taggers] gets torchvision transitively via `ram`; [serve] has no such
