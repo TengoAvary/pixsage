@@ -24,12 +24,70 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="empty-state">No catalogs yet. Use the folder picker to scan a directory containing <code>.photoindex/</code> folders.</p>
+    <p class="empty-state">No catalogs yet. Click <strong>Add catalog&hellip;</strong> and pick a folder (or a whole drive) that contains indexed <code>.photoindex/</code> catalogs.</p>
   {% endif %}
 
   <div class="catalogs-actions">
+    <button type="button">Add catalog&hellip;</button>
     <form method="post" action="/catalogs/refresh" style="display:inline">
-      <button type="submit">Refresh</button>
+      <button type="submit">Refresh availability</button>
     </form>
   </div>
+
+  <dialog id="catalog-browser">
+    <h3>Pick a folder to scan for catalogs</h3>
+    <p class="cb-current" id="cb-current"></p>
+    <ul id="cb-list" class="cb-list"></ul>
+    <form method="post" action="/catalogs/add-scan">
+      <input type="hidden" name="path" id="cb-path">
+      <button type="submit" id="cb-submit" disabled>Scan this folder &amp; add catalogs</button>
+      <button type="button" onclick="document.getElementById('catalog-browser').close()">Cancel</button>
+    </form>
+  </dialog>
+
+  <script>
+  (function () {
+    var dlg = document.getElementById('catalog-browser');
+    if (!dlg) return;
+    function render(d) {
+      document.getElementById('cb-current').textContent = d.path;
+      document.getElementById('cb-path').value = d.path;
+      var ul = document.getElementById('cb-list');
+      ul.innerHTML = '';
+      d.roots.forEach(function (r) {
+        var li = document.createElement('li');
+        var a = document.createElement('a');
+        a.href = '#'; a.textContent = '⌂ ' + r.name;
+        a.onclick = function (e) { e.preventDefault(); load(r.path); };
+        li.appendChild(a); ul.appendChild(li);
+      });
+      if (d.parent) {
+        var up = document.createElement('li');
+        var ua = document.createElement('a');
+        ua.href = '#'; ua.textContent = '.. (up)';
+        ua.onclick = function (e) { e.preventDefault(); load(d.parent); };
+        up.appendChild(ua); ul.appendChild(up);
+      }
+      d.entries.forEach(function (en) {
+        var li = document.createElement('li');
+        var a = document.createElement('a');
+        a.href = '#';
+        a.textContent = en.name + (en.has_photoindex ? '  ✓ catalog' : '');
+        a.onclick = function (e) { e.preventDefault(); load(en.path); };
+        li.appendChild(a); ul.appendChild(li);
+      });
+      document.getElementById('cb-submit').disabled = false;
+    }
+    function load(p) {
+      fetch('/catalogs/browse?path=' + encodeURIComponent(p))
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(render)
+        .catch(function () {
+          document.getElementById('cb-current').textContent = 'Could not open that folder.';
+        });
+    }
+    document.querySelector('.catalogs-actions button')
+      .addEventListener('click', function () { dlg.showModal(); load(''); });
+  })();
+  </script>
 </details>
