@@ -299,3 +299,47 @@ def test_browse_rejects_bad_path(tmp_path):
     with TestClient(app) as client:
         r = client.get("/catalogs/browse", params={"path": str(tmp_path / "nope")})
         assert r.status_code == 400
+
+
+def test_add_scan_registers_nested_catalogs(tmp_path):
+    from pixsage.web.app import build_app
+    a = tmp_path / "drive" / "ShootA"
+    b = tmp_path / "drive" / "ShootB"
+    _make_catalog(a / ".photoindex", photo_root=a)
+    _make_catalog(b / ".photoindex", photo_root=b)
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.post("/catalogs/add-scan",
+                         data={"path": str(tmp_path / "drive")},
+                         follow_redirects=False)
+        assert r.status_code in (302, 303)
+        reg = Registry(tmp_path / "catalogs.json")
+        reg.load()
+        labels = sorted(e.label for e in reg.entries())
+        assert labels == ["ShootA", "ShootB"]
+
+
+def test_add_scan_empty_subtree_adds_nothing(tmp_path):
+    from pixsage.web.app import build_app
+    (tmp_path / "plain").mkdir()
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.post("/catalogs/add-scan", data={"path": str(tmp_path / "plain")},
+                         follow_redirects=False)
+        assert r.status_code in (302, 303)
+        reg = Registry(tmp_path / "catalogs.json")
+        reg.load()
+        assert list(reg.entries()) == []
+
+
+def test_add_scan_dedupes_already_registered(tmp_path):
+    from pixsage.web.app import build_app
+    s = tmp_path / "Sony"
+    _make_catalog(s / ".photoindex", photo_root=s)
+    app = build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
+    with TestClient(app) as client:
+        client.post("/catalogs/add-scan", data={"path": str(tmp_path)})
+        client.post("/catalogs/add-scan", data={"path": str(tmp_path)})
+        reg = Registry(tmp_path / "catalogs.json")
+        reg.load()
+        assert len(list(reg.entries())) == 1
