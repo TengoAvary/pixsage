@@ -96,12 +96,27 @@ def _catalog_stats() -> dict:
         con.close()
 
 
+def _count_vectors(kind: str) -> int:
+    """Row count across the legacy single file plus append-only part-files
+    (vectors/<kind>/*.parquet). Only parquet footers are read, so this stays
+    cheap even with many part-files."""
+    vroot = PHOTOINDEX / "vectors"
+    total = 0
+    legacy = vroot / f"{kind}.parquet"
+    if legacy.exists():
+        total += pq.ParquetFile(legacy).metadata.num_rows
+    part_dir = vroot / kind
+    if part_dir.is_dir():
+        for part in part_dir.glob("*.parquet"):
+            total += pq.ParquetFile(part).metadata.num_rows
+    return total
+
+
 def _vector_stats() -> dict:
-    img_path = PHOTOINDEX / "vectors" / "siglip2_image.parquet"
-    cap_path = PHOTOINDEX / "vectors" / "minilm_caption.parquet"
-    img_n = pq.ParquetFile(img_path).metadata.num_rows if img_path.exists() else 0
-    cap_n = pq.ParquetFile(cap_path).metadata.num_rows if cap_path.exists() else 0
-    return {"image_vecs": img_n, "caption_vecs": cap_n}
+    return {
+        "image_vecs": _count_vectors("siglip2_image"),
+        "caption_vecs": _count_vectors("minilm_caption"),
+    }
 
 
 def _active_stage() -> str:
