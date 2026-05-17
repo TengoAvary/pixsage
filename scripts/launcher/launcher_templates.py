@@ -18,6 +18,8 @@ REM PYTHONNOUSERSITE=1 isolates the runtime from any host-Python user site-packa
 REM (e.g. a torch nightly the user installed for unrelated work) — without it,
 REM the host's torchvision can leak in and crash against the runtime's torch.
 set PYTHONNOUSERSITE=1
+set PYTHONPATH={runtime_path}\site-packages
+set HF_HOME={runtime_path}
 start "" "{runtime_path}\python\pythonw.exe" -m pixsage serve "%~dp0"
 """
 
@@ -28,6 +30,8 @@ MACOS_COMMAND = r"""#!/bin/bash
 # PYTHONNOUSERSITE=1 isolates the runtime from any host-Python user site-packages.
 cd "$(dirname "$0")"
 export PYTHONNOUSERSITE=1
+export PYTHONPATH="{runtime_path}/site-packages"
+export HF_HOME="{runtime_path}"
 exec "{runtime_path}/python/bin/python3" -m pixsage serve "$PWD"
 """
 
@@ -40,6 +44,8 @@ LAPTOP_WINDOWS_BAT = r"""@echo off
 REM Pixsage Search laptop launcher (Windows).
 REM Runs the locally-installed pixsage runtime in multi-catalog mode.
 set PYTHONNOUSERSITE=1
+set PYTHONPATH={runtime_path}\site-packages
+set HF_HOME={runtime_path}
 start "" "{runtime_path}\python\pythonw.exe" -m pixsage serve
 """
 
@@ -48,6 +54,8 @@ LAPTOP_MACOS_COMMAND = r"""#!/bin/bash
 # Pixsage Search laptop launcher (macOS).
 # Runs the locally-installed pixsage runtime in multi-catalog mode.
 export PYTHONNOUSERSITE=1
+export PYTHONPATH="{runtime_path}/site-packages"
+export HF_HOME="{runtime_path}"
 exec "{runtime_path}/python/bin/python3" -m pixsage serve
 """
 

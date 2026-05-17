@@ -90,6 +90,16 @@ def walk_for_photoindex(
     Bounded by max_depth from each root and time_budget_s across the whole
     walk.
     """
+    def _is_dir(p: Path) -> bool:
+        # Path.is_dir() swallows generic OSError but NOT PermissionError
+        # (EACCES) — SIP-protected files under a mounted system volume
+        # (e.g. /Volumes/Macintosh HD/usr/sbin/*) would otherwise abort
+        # the whole walk. Treat anything we can't stat as "not a dir".
+        try:
+            return p.is_dir()
+        except OSError:
+            return False
+
     found: list[Path] = []
     deadline = time.monotonic() + time_budget_s
 
@@ -114,7 +124,7 @@ def walk_for_photoindex(
             # add it and do NOT descend further from `current`.
             photoindex_here = None
             for child in children:
-                if child.name == ".photoindex" and child.is_dir():
+                if child.name == ".photoindex" and _is_dir(child):
                     photoindex_here = child
                     break
             if photoindex_here is not None:
@@ -125,7 +135,7 @@ def walk_for_photoindex(
             if depth >= max_depth:
                 continue
             for child in children:
-                if not child.is_dir():
+                if not _is_dir(child):
                     continue
                 if child.name in SKIP_DIRS or child.name.startswith("."):
                     continue
