@@ -24,16 +24,12 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="empty-state">No catalogs yet. Plug in a drive that contains a <code>.photoindex/</code> folder and click Rescan drives, or paste a path to add one manually.</p>
+    <p class="empty-state">No catalogs yet. Use the folder picker to scan a directory containing <code>.photoindex/</code> folders.</p>
   {% endif %}
 
   <div class="catalogs-actions">
-    <form method="post" action="/catalogs/add" class="add-catalog-form">
-      <input type="text" name="path" placeholder="Paste a path to a folder containing .photoindex/" required>
-      <button type="submit">Add catalog&hellip;</button>
-    </form>
-    <form method="post" action="/catalogs/rescan" style="display:inline">
-      <button type="submit">Rescan drives</button>
+    <form method="post" action="/catalogs/refresh" style="display:inline">
+      <button type="submit">Refresh</button>
     </form>
   </div>
 </details>

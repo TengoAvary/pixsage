@@ -128,38 +128,6 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             },
         )
 
-    @app.post("/catalogs/add")
-    def add_catalog(path: str = Form(...)) -> RedirectResponse:
-        from pixsage.registry import derive_signatures
-
-        registry = app.state.registry
-        p = Path(path).resolve()
-        if not p.exists():
-            raise HTTPException(status_code=400, detail=f"path does not exist: {p}")
-        photoindex = p / ".photoindex" if (p / ".photoindex").exists() else p
-        if not (photoindex / "catalog.db").exists():
-            raise HTTPException(
-                status_code=400,
-                detail=f"no .photoindex/catalog.db under {p}",
-            )
-        if registry.find_by_photoindex_path(str(photoindex)) is not None:
-            return RedirectResponse(url="/", status_code=303)
-
-        img_sig, cap_sig = derive_signatures(photoindex)
-        # Label is always the photo root's name. `photoindex.parent` is the photo root
-        # whether the user pasted the folder or the .photoindex/ dir.
-        label = photoindex.parent.name
-        entry = registry.add(
-            photoindex_path=str(photoindex),
-            label=label,
-            image_embedder_signature=img_sig,
-            caption_embedder_signature=cap_sig,
-        )
-        entry.available = True
-        registry.save()
-        _load_catalog_into_multi(app, entry)
-        return RedirectResponse(url="/", status_code=303)
-
     @app.get("/catalogs/browse")
     def browse_dirs(path: str | None = None) -> dict:
         from pixsage.discovery import safe_is_dir
@@ -268,33 +236,26 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
             multi.remove_catalog(catalog_id)
         return RedirectResponse(url="/", status_code=303)
 
-    @app.post("/catalogs/rescan")
-    def rescan_catalogs() -> RedirectResponse:
-        from pixsage import discovery
-
+    @app.post("/catalogs/refresh")
+    def refresh_catalogs() -> RedirectResponse:
         registry = app.state.registry
         multi = app.state.multi_search
-        discovered = discovery.walk_for_photoindex(discovery.list_mounted_roots())
-        registry.refresh_from_discovery(discovered)
+        registry.refresh_availability()
         registry.save()
 
-        # Reconcile MultiSearchService: target state (enabled + available) vs
-        # actually-loaded state. Symmetric so a catalog that went offline and
-        # came back gets reloaded (was registered, so not "new"; was unloaded
-        # on the prior rescan, so it needs to be re-added now).
+        # Reconcile loaded state vs target (enabled + available).
         loaded_ids = set(multi.catalog_ids())
         for entry in registry.entries():
-            should_be_loaded = entry.enabled and entry.available
+            should = entry.enabled and entry.available
             is_loaded = entry.id in loaded_ids
-            if should_be_loaded and not is_loaded:
+            if should and not is_loaded:
                 _load_catalog_into_multi(app, entry)
-            elif is_loaded and not should_be_loaded:
+            elif is_loaded and not should:
                 multi.remove_catalog(entry.id)
                 app.state.catalogs.pop(entry.id, None)
                 app.state.path_resolvers.pop(entry.id, None)
                 app.state.thumbs_by_catalog.pop(entry.id, None)
                 app.state.photoindex_paths.pop(entry.id, None)
-
         return RedirectResponse(url="/", status_code=303)
 
     @app.get("/similar/{catalog_id}/{sha256}", response_class=HTMLResponse)
@@ -476,7 +437,7 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
 
 
 def _load_catalog_into_multi(app, entry) -> None:
-    """Load a single catalog into the MultiSearchService. Used by toggle/add/rescan."""
+    """Load a single catalog into the MultiSearchService. Used by toggle, add-scan, and refresh."""
     from pixsage.catalog import Catalog
     from pixsage.path_translation import PathResolver
     from pixsage.search import SearchService
