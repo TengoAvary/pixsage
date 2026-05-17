@@ -160,6 +160,45 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         _load_catalog_into_multi(app, entry)
         return RedirectResponse(url="/", status_code=303)
 
+    @app.get("/catalogs/browse")
+    def browse_dirs(path: str | None = None) -> dict:
+        from pixsage.discovery import safe_is_dir
+
+        base = Path(path).expanduser() if path else Path.home()
+        try:
+            base = base.resolve()
+        except OSError:
+            raise HTTPException(status_code=400, detail=f"bad path: {path}")
+        if not (base.exists() and base.is_dir()):
+            raise HTTPException(status_code=400, detail=f"not a directory: {base}")
+
+        entries = []
+        try:
+            children = sorted(base.iterdir(), key=lambda c: c.name.lower())
+        except OSError:
+            children = []
+        for c in children:
+            if c.name.startswith(".") or not safe_is_dir(c):
+                continue
+            entries.append({
+                "name": c.name,
+                "path": str(c),
+                "has_photoindex": (c / ".photoindex").exists(),
+            })
+
+        roots = [{"name": "Home", "path": str(Path.home())}]
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            try:
+                for v in sorted(volumes.iterdir(), key=lambda c: c.name.lower()):
+                    if safe_is_dir(v):
+                        roots.append({"name": v.name, "path": str(v)})
+            except OSError:
+                pass
+
+        parent = str(base.parent) if base.parent != base else None
+        return {"path": str(base), "parent": parent, "entries": entries, "roots": roots}
+
     @app.post("/catalogs/{catalog_id}/remove")
     def remove_catalog(catalog_id: str) -> RedirectResponse:
         registry = app.state.registry

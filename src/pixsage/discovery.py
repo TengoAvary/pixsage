@@ -27,6 +27,19 @@ SKIP_DIRS = frozenset({
 })
 
 
+def safe_is_dir(p: "Path") -> bool:
+    """Path.is_dir() that treats un-stattable paths as non-dirs.
+
+    Path.is_dir() swallows generic OSError but NOT PermissionError
+    (EACCES) — SIP-protected files under a system volume would otherwise
+    raise. Used by the walker and the folder-browser endpoint.
+    """
+    try:
+        return p.is_dir()
+    except OSError:
+        return False
+
+
 def list_mounted_roots() -> list[Path]:
     """Return likely roots for `walk_for_photoindex`.
 
