@@ -1,13 +1,12 @@
-"""Find pixsage catalogs (`.photoindex/` directories) by walking mounted drives.
+"""Find pixsage catalogs (.photoindex/ directories) by walking a user-chosen root.
 
-Used at serve startup to detect newly-plugged-in drives. The walk is bounded
-(BFS, max depth, time budget) and stops descending into directories that
-already contain `.photoindex/` — those subtrees are owned by their catalog.
+Called by POST /catalogs/add-scan. The walk is bounded by max_depth and a time
+budget (BFS), skipping SKIP_DIRS and dotfiles, and stops descending into
+directories that already contain .photoindex/.
 """
 from __future__ import annotations
 
 import logging
-import sys
 import time
 from collections import deque
 from pathlib import Path
@@ -38,55 +37,6 @@ def safe_is_dir(p: "Path") -> bool:
         return p.is_dir()
     except OSError:
         return False
-
-
-def list_mounted_roots() -> list[Path]:
-    """Return likely roots for `walk_for_photoindex`.
-
-    Mac:  /Volumes/* (mounted drives) + ~/
-    Win:  ~/ for the system drive (skips Windows/Program Files/ProgramData),
-          every other live drive letter at root
-    Linux: /media/*, /mnt/*, ~/
-
-    The system-drive case matters on Windows: walking `C:\\` from root with
-    a 5-second BFS budget exhausts itself in `Windows\\` and similar before
-    reaching any user-photo location. User catalogs live under `~/` or on
-    external drives — those are the only relevant roots.
-    """
-    import os
-    roots: list[Path] = []
-    home = Path.home()
-
-    # Order matters: external drives first (small, likely to contain photo
-    # catalogs), home last (large, used as a fallback for ~/Pictures and
-    # similar). With a shared time budget, exhausting it on home would mean
-    # external drives never get walked.
-    if sys.platform == "darwin":
-        volumes = Path("/Volumes")
-        if volumes.exists():
-            for v in volumes.iterdir():
-                roots.append(v)
-        roots.append(home)
-    elif sys.platform == "win32":
-        import string
-        system_drive = os.environ.get("SystemDrive", "C:").upper()
-        for letter in string.ascii_uppercase:
-            drive = Path(f"{letter}:\\")
-            if not drive.exists():
-                continue
-            if f"{letter}:" == system_drive:
-                continue  # handled below as `home`
-            roots.append(drive)
-        # Home last — large dir, used as fallback for ~/Pictures etc.
-        roots.append(home)
-    else:
-        for parent in (Path("/media"), Path("/mnt")):
-            if parent.exists():
-                for v in parent.iterdir():
-                    roots.append(v)
-        roots.append(home)
-
-    return roots
 
 
 def walk_for_photoindex(
