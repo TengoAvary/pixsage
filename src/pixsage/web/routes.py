@@ -199,6 +199,33 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         parent = str(base.parent) if base.parent != base else None
         return {"path": str(base), "parent": parent, "entries": entries, "roots": roots}
 
+    @app.post("/catalogs/add-scan")
+    def add_scan(path: str = Form(...)) -> RedirectResponse:
+        from pixsage import discovery
+        from pixsage.registry import derive_signatures
+
+        registry = app.state.registry
+        root = Path(path).expanduser()
+        if not (root.exists() and root.is_dir()):
+            raise HTTPException(status_code=400, detail=f"not a directory: {root}")
+
+        found = discovery.walk_for_photoindex([root])
+        for pi in found:
+            pi = Path(pi)
+            if registry.find_by_photoindex_path(str(pi)) is not None:
+                continue
+            img_sig, cap_sig = derive_signatures(pi)
+            entry = registry.add(
+                photoindex_path=str(pi),
+                label=pi.parent.name,
+                image_embedder_signature=img_sig,
+                caption_embedder_signature=cap_sig,
+            )
+            entry.available = True
+            _load_catalog_into_multi(app, entry)
+        registry.save()
+        return RedirectResponse(url="/", status_code=303)
+
     @app.post("/catalogs/{catalog_id}/remove")
     def remove_catalog(catalog_id: str) -> RedirectResponse:
         registry = app.state.registry
