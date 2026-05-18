@@ -35,7 +35,25 @@ Invoke-WebRequest `
 $env:PIXSAGE_RAM_CKPT = "$dir\ram_plus_swin_large_14m.pth"
 ```
 
-The checkpoint is ~2.9 GB. If you skip this step, RAM++ will fail to load and the pipeline will fall back to Florence-2 only.
+The checkpoint is ~2.9 GB.
+
+> **RAM++ is required, not optional.** With the default vocabulary
+> (`florence2.tags_enabled = false`) RAM++ is the *only* keyword source. If
+> the checkpoint is missing or `PIXSAGE_RAM_CKPT` is unset, `pixsage tag`
+> **hard-crashes at model load** with `checkpoint url or path is invalid` —
+> there is no Florence-2-only fallback. Captions alone (no keywords) is not a
+> useful "tag" result.
+>
+> **`PIXSAGE_RAM_CKPT` is session-scoped.** `export` / `$env:` only sets it
+> for the current shell. Background jobs, new terminals, scheduled runs, and
+> orchestration scripts will *not* inherit it and will crash as above. Either
+> persist it once —
+> `setx PIXSAGE_RAM_CKPT "%USERPROFILE%\.cache\pixsage\ram_plus_swin_large_14m.pth"`
+> (Windows, new shells only) — **or** set it at the top of your run script
+> (see [Live monitoring](#live-monitoring) for the canonical pattern). The
+> default search path if the env var is unset is just
+> `ram_plus_swin_large_14m.pth` in the *current working directory*, which is
+> almost never where the checkpoint actually is.
 
 **Note for Windows users:** Florence-2's HF modeling file imports `flash_attn`, which has no Windows wheels. The pixsage wrapper registers a stub before loading and uses the eager attention implementation, so this works out of the box — you do not need to install flash_attn yourself.
 
@@ -232,8 +250,53 @@ python scripts/dashboard.py /path/to/photo_root \
 
 Shows: active stage + tqdm tail + per-stage progress bars + throughput and
 ETA + CPU / RAM / GPU (via `nvidia-smi`) / disk read MB/s. Open
-`http://127.0.0.1:8766/`. The orchestrating shell script is expected to
-redirect each stage's stdout to `<logdir>/<stage>.log`.
+`http://127.0.0.1:8766/`. If geolocation has run, a live map of GeoCLIP's
+top-1 guesses fills in as predictions land.
+
+The dashboard reads `<logdir>/<stage>.log` (one per stage: `tag.log`,
+`embed.log`, `geolocate.log`). It does not run the pipeline — an
+orchestration script does, redirecting each stage there. Canonical pattern
+for a Windows full-corpus run (`scripts/`-adjacent, gitignored as
+`.<corpus>-*`):
+
+```powershell
+# .myrun-pipeline.ps1
+$env:PIXSAGE_RAM_CKPT = "C:\Users\you\.cache\pixsage\ram_plus_swin_large_14m.pth"
+$root   = "H:\my-corpus"
+$logdir = "C:\path\to\pixsage\.myrun-logs"
+New-Item -ItemType Directory -Force -Path $logdir | Out-Null
+
+# cmd /c redirect — NOT `python ... > log` in PowerShell. PowerShell writes
+# UTF-16-LE with a BOM; the dashboard's tqdm regex expects ASCII-ish bytes
+# and the progress bars will read as blank/garbled otherwise.
+cmd /c "python -m pixsage tag `"$root`" > `"$logdir\tag.log`" 2>&1"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }   # don't embed a failed tag
+cmd /c "python -m pixsage embed `"$root`" > `"$logdir\embed.log`" 2>&1"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+cmd /c "python -m pixsage geolocate `"$root`" --all > `"$logdir\geolocate.log`" 2>&1"
+exit $LASTEXITCODE
+```
+
+Launch it detached, then start the dashboard pointed at the same `--logdir`:
+
+```powershell
+Start-Process powershell -ArgumentList '-NoProfile','-File','.\.myrun-pipeline.ps1' -WindowStyle Hidden
+python scripts/dashboard.py H:/my-corpus --logdir C:/path/to/pixsage/.myrun-logs --total-raw-paths <N> --dupe-rate 0.30 --port 8766
+```
+
+Three traps, each of which has cost a debugging session:
+
+1. **Set `PIXSAGE_RAM_CKPT` *inside* the script.** A background/detached
+   process does not inherit your interactive shell's env — bare
+   `python -m pixsage tag` from a launched job crashes at RAM++ load even
+   though it "worked yesterday" interactively.
+2. **`cmd /c "... > log 2>&1"`, never PowerShell `>`/`Tee-Object`.** The
+   UTF-16 BOM breaks the dashboard's progress parsing (tail looks fine,
+   every other stat freezes).
+3. **`--total-raw-paths` is the recursive candidate count**, not unique
+   photos; `--dupe-rate` (raw+jpeg pairs ≈ 0.3) is only used to estimate the
+   unique-sha denominator. Both are display-only — wrong values just skew
+   the ETA, they don't affect the run.
 
 ## Tests
 
