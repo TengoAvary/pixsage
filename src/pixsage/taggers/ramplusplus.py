@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PIL import Image
 
 from pixsage.taggers.base import Tag, TagResult
 
 MODEL_VERSION = "ram_plus_swin_large_14m"
+DEFAULT_CKPT_PATH = Path.home() / ".cache" / "pixsage" / f"{MODEL_VERSION}.pth"
+
+
+def resolve_ram_ckpt() -> str:
+    """Return the RAM++ checkpoint path: env override wins, else default cache."""
+    import os
+    return os.environ.get("PIXSAGE_RAM_CKPT") or str(DEFAULT_CKPT_PATH)
 
 
 class RamPlusPlusTagger:
@@ -17,8 +26,6 @@ class RamPlusPlusTagger:
         self._device = "cpu"
 
     def load(self, device: str) -> None:
-        import os
-
         import torch  # noqa: F401  (ensures torch is available)
         from ram import get_transform
         from ram.models import ram_plus
@@ -26,8 +33,7 @@ class RamPlusPlusTagger:
         self._device = device
         # Image size 384 is the standard RAM++ training resolution.
         self._transform = get_transform(image_size=384)
-        # Load the public checkpoint. Users may need to download the .pth and pass via env.
-        ckpt = os.environ.get("PIXSAGE_RAM_CKPT", "ram_plus_swin_large_14m.pth")
+        ckpt = resolve_ram_ckpt()
         model = ram_plus(pretrained=ckpt, image_size=384, vit="swin_l")
         model.eval()
         self._model = model.to(device)

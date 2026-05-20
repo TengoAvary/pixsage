@@ -38,7 +38,7 @@ class FakePopen:
         self._terminated = True
 
     def _is_dashboard(self) -> bool:
-        return any("scripts.dashboard" in part for part in self.cmd)
+        return any("dashboard.py" in part for part in self.cmd)
 
 
 def _install_fake_popen(monkeypatch, **fake_kwargs):
@@ -85,7 +85,7 @@ def test_run_launches_dashboard_by_default(tmp_path: Path, monkeypatch) -> None:
 
     assert result.exit_code == 0, result.stdout
     cmds = [p.cmd for p in FakePopen.instances]
-    assert any("scripts.dashboard" in " ".join(c) for c in cmds)
+    assert any("dashboard.py" in " ".join(c) for c in cmds)
     # Dashboard must be torn down by the finally block.
     dashboard = next(p for p in FakePopen.instances if p._is_dashboard())
     assert dashboard._terminated

@@ -32,28 +32,23 @@ $dir = "$env:USERPROFILE\.cache\pixsage"; New-Item -ItemType Directory -Path $di
 Invoke-WebRequest `
   -Uri "https://huggingface.co/xinyu1205/recognize-anything-plus-model/resolve/main/ram_plus_swin_large_14m.pth" `
   -OutFile "$dir\ram_plus_swin_large_14m.pth"
-$env:PIXSAGE_RAM_CKPT = "$dir\ram_plus_swin_large_14m.pth"
 ```
 
 The checkpoint is ~2.9 GB.
 
 > **RAM++ is required, not optional.** With the default vocabulary
 > (`florence2.tags_enabled = false`) RAM++ is the *only* keyword source. If
-> the checkpoint is missing or `PIXSAGE_RAM_CKPT` is unset, `pixsage tag`
-> **hard-crashes at model load** with `checkpoint url or path is invalid` —
-> there is no Florence-2-only fallback. Captions alone (no keywords) is not a
-> useful "tag" result.
+> the checkpoint can't be located, `pixsage tag` **hard-crashes at model
+> load** with `checkpoint url or path is invalid` — there is no
+> Florence-2-only fallback. Captions alone (no keywords) is not a useful
+> "tag" result.
 >
-> **`PIXSAGE_RAM_CKPT` is session-scoped.** `export` / `$env:` only sets it
-> for the current shell. Background jobs, new terminals, scheduled runs, and
-> orchestration scripts will *not* inherit it and will crash as above. Either
-> persist it once —
-> `setx PIXSAGE_RAM_CKPT "%USERPROFILE%\.cache\pixsage\ram_plus_swin_large_14m.pth"`
-> (Windows, new shells only) — **or** set it at the top of your run script
-> (see [Live monitoring](#live-monitoring) for the canonical pattern). The
-> default search path if the env var is unset is just
-> `ram_plus_swin_large_14m.pth` in the *current working directory*, which is
-> almost never where the checkpoint actually is.
+> **Default search path:** `~/.cache/pixsage/ram_plus_swin_large_14m.pth`
+> (= `%USERPROFILE%\.cache\pixsage\...` on Windows). Drop the checkpoint
+> there and you're done. To use a different location, set
+> `PIXSAGE_RAM_CKPT` to the full path. The env var is session-scoped —
+> background / detached / scheduled jobs inherit only what you set in their
+> parent shell.
 
 **Note for Windows users:** Florence-2's HF modeling file imports `flash_attn`, which has no Windows wheels. The pixsage wrapper registers a stub before loading and uses the eager attention implementation, so this works out of the box — you do not need to install flash_attn yourself.
 
@@ -242,9 +237,12 @@ foreground command:
 
 ```bash
 pip install -e ".[taggers,search,dashboard]"
-export PIXSAGE_RAM_CKPT=~/.cache/pixsage/ram_plus_swin_large_14m.pth  # required
 pixsage run /path/to/photos
 ```
+
+Assumes the RAM++ checkpoint is at the default location
+(`~/.cache/pixsage/ram_plus_swin_large_14m.pth` — see [Setup](#setup)).
+Set `PIXSAGE_RAM_CKPT` to override.
 
 The dashboard binds `http://127.0.0.1:8766/` (override with
 `--dashboard-port`). Stage logs go to
@@ -257,11 +255,6 @@ throughput and ETA + CPU / RAM / GPU (via `nvidia-smi`) / disk read MB/s.
 Geolocate is intentionally **not** part of `pixsage run` — GeoCLIP has
 been validated as near-useless on portfolio photography. Run
 `pixsage geolocate` separately if you need it.
-
-**One trap that still bites:** `PIXSAGE_RAM_CKPT` must be set in the
-parent shell *before* `pixsage run`. If you launch `pixsage run` from a
-detached/scheduled job, set the env var in the script itself — child
-processes inherit the parent's env, but a detached parent has its own.
 
 **Detached / custom orchestration.** For runs that must survive shell exit
 or include geolocate, drive the stages directly and point the dashboard

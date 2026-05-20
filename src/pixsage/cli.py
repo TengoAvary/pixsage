@@ -831,33 +831,39 @@ def run(
 
     dashboard_proc: subprocess.Popen | None = None
     if not no_dashboard:
-        dashboard_log_path = logdir / "dashboard.log"
-        # Open in binary mode and let the child write its own utf-8; this
-        # mirrors how the tag/embed logs are written and avoids any parent
-        # encoding interference on Windows.
-        dashboard_log = open(dashboard_log_path, "wb")
-        dashboard_proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "scripts.dashboard", str(photo_root),
-                "--logdir", str(logdir),
-                "--port", str(dashboard_port),
-            ],
-            stdout=dashboard_log,
-            stderr=subprocess.STDOUT,
-        )
-        # Give uvicorn ~1s to bind the port (or crash). If it died, surface
-        # the failure but continue with the pipeline — the dashboard is a
-        # nice-to-have, not a blocker.
-        time.sleep(1.0)
-        if dashboard_proc.poll() is not None:
+        dashboard_script = _find_dashboard_script()
+        if dashboard_script is None:
             typer.echo(
-                f"warning: dashboard exited (code {dashboard_proc.returncode}); "
-                f"see {dashboard_log_path}",
+                "warning: dashboard script not found (only available from a "
+                "source checkout); continuing without dashboard",
                 err=True,
             )
-            dashboard_proc = None
         else:
-            typer.echo(f"dashboard: http://127.0.0.1:{dashboard_port}/")
+            dashboard_log_path = logdir / "dashboard.log"
+            # Binary-mode log; child writes utf-8 directly, avoiding parent
+            # encoding interference on Windows.
+            dashboard_log = open(dashboard_log_path, "wb")
+            dashboard_proc = subprocess.Popen(
+                [
+                    sys.executable, str(dashboard_script), str(photo_root),
+                    "--logdir", str(logdir),
+                    "--port", str(dashboard_port),
+                ],
+                stdout=dashboard_log,
+                stderr=subprocess.STDOUT,
+            )
+            # Give uvicorn ~1s to bind the port (or crash). If it died,
+            # surface the failure but continue with the pipeline.
+            time.sleep(1.0)
+            if dashboard_proc.poll() is not None:
+                typer.echo(
+                    f"warning: dashboard exited (code {dashboard_proc.returncode}); "
+                    f"see {dashboard_log_path}",
+                    err=True,
+                )
+                dashboard_proc = None
+            else:
+                typer.echo(f"dashboard: http://127.0.0.1:{dashboard_port}/")
 
     try:
         for name in ("tag", "embed"):
@@ -886,6 +892,19 @@ def run(
                 dashboard_proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 dashboard_proc.kill()
+
+
+def _find_dashboard_script() -> Path | None:
+    """Locate scripts/dashboard.py relative to the pixsage package.
+
+    Returns the absolute path when running from a source checkout (editable
+    install or repo clone). Returns None for wheel-only installs where
+    scripts/ doesn't ship — caller falls back to dashboard-less operation.
+    """
+    import pixsage
+    repo_root = Path(pixsage.__file__).resolve().parent.parent.parent
+    candidate = repo_root / "scripts" / "dashboard.py"
+    return candidate if candidate.is_file() else None
 
 
 def _stage_summary(log_path: Path) -> str:
