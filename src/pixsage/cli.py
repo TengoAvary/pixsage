@@ -804,6 +804,103 @@ def serve(
     uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
 
 
+@app.command(name="run")
+def run(
+    photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    dashboard_port: int = typer.Option(8766, "--dashboard-port", help="Port for the progress dashboard."),
+    no_dashboard: bool = typer.Option(False, "--no-dashboard", help="Skip launching the progress dashboard."),
+) -> None:
+    """Run tag + embed on PHOTO_ROOT with a live progress dashboard.
+
+    Logs go to <PHOTO_ROOT>/.photoindex/logs/{tag,embed}.log. Dashboard
+    serves at http://127.0.0.1:<port>/ until the pipeline finishes, then
+    is torn down automatically.
+
+    Geolocate is intentionally not part of `run` — GeoCLIP has proven
+    near-useless on portfolio photography. Run `pixsage geolocate`
+    separately if you need it.
+    """
+    import subprocess
+    import sys
+    import time
+
+    photoindex = photo_root / ".photoindex"
+    photoindex.mkdir(exist_ok=True)
+    logdir = photoindex / "logs"
+    logdir.mkdir(exist_ok=True)
+
+    dashboard_proc: subprocess.Popen | None = None
+    if not no_dashboard:
+        dashboard_log_path = logdir / "dashboard.log"
+        # Open in binary mode and let the child write its own utf-8; this
+        # mirrors how the tag/embed logs are written and avoids any parent
+        # encoding interference on Windows.
+        dashboard_log = open(dashboard_log_path, "wb")
+        dashboard_proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "scripts.dashboard", str(photo_root),
+                "--logdir", str(logdir),
+                "--port", str(dashboard_port),
+            ],
+            stdout=dashboard_log,
+            stderr=subprocess.STDOUT,
+        )
+        # Give uvicorn ~1s to bind the port (or crash). If it died, surface
+        # the failure but continue with the pipeline — the dashboard is a
+        # nice-to-have, not a blocker.
+        time.sleep(1.0)
+        if dashboard_proc.poll() is not None:
+            typer.echo(
+                f"warning: dashboard exited (code {dashboard_proc.returncode}); "
+                f"see {dashboard_log_path}",
+                err=True,
+            )
+            dashboard_proc = None
+        else:
+            typer.echo(f"dashboard: http://127.0.0.1:{dashboard_port}/")
+
+    try:
+        for name in ("tag", "embed"):
+            log_path = logdir / f"{name}.log"
+            typer.echo(f"[{name}] -> {log_path}")
+            # Binary mode + utf-8 from the child sidesteps PowerShell's
+            # UTF-16-BOM redirect trap that breaks dashboard tqdm parsing.
+            with open(log_path, "wb") as logf:
+                stage_proc = subprocess.Popen(
+                    [sys.executable, "-m", "pixsage", name, str(photo_root)],
+                    stdout=logf,
+                    stderr=subprocess.STDOUT,
+                )
+                exit_code = stage_proc.wait()
+            if exit_code != 0:
+                typer.echo(
+                    f"[{name}] failed (exit {exit_code}); see {log_path}",
+                    err=True,
+                )
+                raise typer.Exit(code=exit_code)
+            typer.echo(f"[{name}] {_stage_summary(log_path)}")
+    finally:
+        if dashboard_proc is not None and dashboard_proc.poll() is None:
+            dashboard_proc.terminate()
+            try:
+                dashboard_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                dashboard_proc.kill()
+
+
+def _stage_summary(log_path: Path) -> str:
+    """Pull the final `done.` line from a stage log; fall back to 'done'."""
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "done"
+    text = text.replace("\r", "\n")
+    for line in reversed(text.splitlines()):
+        if line.startswith("done."):
+            return line
+    return "done"
+
+
 @app.command(name="stage-launchers")
 def stage_launchers(
     photo_root: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),

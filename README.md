@@ -236,67 +236,63 @@ that have any required combination of fields. `python scripts/load_export.py
 
 ### Live monitoring
 
-For long full-corpus runs, `scripts/dashboard.py` is a small FastAPI page that
-polls the catalog DB + parquet vector files + system stats every 2 seconds:
+`pixsage run` is the consolidated entrypoint — runs tag + embed against a
+photo root and launches the progress dashboard alongside, all in one
+foreground command:
 
 ```bash
-pip install -e ".[search,dashboard]"
-python scripts/dashboard.py /path/to/photo_root \
-    --logdir /path/to/full-run-logs \
-    --total-raw-paths 2123 \
-    --dupe-rate 0.36 \
-    --port 8766
+pip install -e ".[taggers,search,dashboard]"
+export PIXSAGE_RAM_CKPT=~/.cache/pixsage/ram_plus_swin_large_14m.pth  # required
+pixsage run /path/to/photos
 ```
 
-Shows: active stage + tqdm tail + per-stage progress bars + throughput and
-ETA + CPU / RAM / GPU (via `nvidia-smi`) / disk read MB/s. Open
-`http://127.0.0.1:8766/`. If geolocation has run, a live map of GeoCLIP's
-top-1 guesses fills in as predictions land.
+The dashboard binds `http://127.0.0.1:8766/` (override with
+`--dashboard-port`). Stage logs go to
+`<PHOTO_ROOT>/.photoindex/logs/{tag,embed,dashboard}.log`. When embed
+exits, the dashboard subprocess is torn down automatically and the
+command returns. Pass `--no-dashboard` to skip the dashboard.
 
-The dashboard reads `<logdir>/<stage>.log` (one per stage: `tag.log`,
-`embed.log`, `geolocate.log`). It does not run the pipeline — an
-orchestration script does, redirecting each stage there. Canonical pattern
-for a Windows full-corpus run (`scripts/`-adjacent, gitignored as
-`.<corpus>-*`):
+The dashboard shows: active stage + tqdm tail + per-stage progress bars +
+throughput and ETA + CPU / RAM / GPU (via `nvidia-smi`) / disk read MB/s.
+Geolocate is intentionally **not** part of `pixsage run` — GeoCLIP has
+been validated as near-useless on portfolio photography. Run
+`pixsage geolocate` separately if you need it.
+
+**One trap that still bites:** `PIXSAGE_RAM_CKPT` must be set in the
+parent shell *before* `pixsage run`. If you launch `pixsage run` from a
+detached/scheduled job, set the env var in the script itself — child
+processes inherit the parent's env, but a detached parent has its own.
+
+**Detached / custom orchestration.** For runs that must survive shell exit
+or include geolocate, drive the stages directly and point the dashboard
+at the same logdir:
 
 ```powershell
 # .myrun-pipeline.ps1
 $env:PIXSAGE_RAM_CKPT = "C:\Users\you\.cache\pixsage\ram_plus_swin_large_14m.pth"
 $root   = "H:\my-corpus"
-$logdir = "C:\path\to\pixsage\.myrun-logs"
+$logdir = "$root\.photoindex\logs"
 New-Item -ItemType Directory -Force -Path $logdir | Out-Null
 
 # cmd /c redirect — NOT `python ... > log` in PowerShell. PowerShell writes
 # UTF-16-LE with a BOM; the dashboard's tqdm regex expects ASCII-ish bytes
 # and the progress bars will read as blank/garbled otherwise.
 cmd /c "python -m pixsage tag `"$root`" > `"$logdir\tag.log`" 2>&1"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }   # don't embed a failed tag
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmd /c "python -m pixsage embed `"$root`" > `"$logdir\embed.log`" 2>&1"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmd /c "python -m pixsage geolocate `"$root`" --all > `"$logdir\geolocate.log`" 2>&1"
 exit $LASTEXITCODE
 ```
 
-Launch it detached, then start the dashboard pointed at the same `--logdir`:
-
 ```powershell
 Start-Process powershell -ArgumentList '-NoProfile','-File','.\.myrun-pipeline.ps1' -WindowStyle Hidden
-python scripts/dashboard.py H:/my-corpus --logdir C:/path/to/pixsage/.myrun-logs --total-raw-paths <N> --dupe-rate 0.30 --port 8766
+python -m scripts.dashboard H:\my-corpus --logdir H:\my-corpus\.photoindex\logs --total-raw-paths <N> --dupe-rate 0.30 --port 8766
 ```
 
-Three traps, each of which has cost a debugging session:
-
-1. **Set `PIXSAGE_RAM_CKPT` *inside* the script.** A background/detached
-   process does not inherit your interactive shell's env — bare
-   `python -m pixsage tag` from a launched job crashes at RAM++ load even
-   though it "worked yesterday" interactively.
-2. **`cmd /c "... > log 2>&1"`, never PowerShell `>`/`Tee-Object`.** The
-   UTF-16 BOM breaks the dashboard's progress parsing (tail looks fine,
-   every other stat freezes).
-3. **`--total-raw-paths` is the recursive candidate count**, not unique
-   photos; `--dupe-rate` (raw+jpeg pairs ≈ 0.3) is only used to estimate the
-   unique-sha denominator. Both are display-only — wrong values just skew
-   the ETA, they don't affect the run.
+`--total-raw-paths` (recursive candidate count) and `--dupe-rate`
+(raw+jpeg pairs ≈ 0.3) are display-only ETA hints; wrong values skew the
+ETA but don't affect the run.
 
 ## Tests
 
