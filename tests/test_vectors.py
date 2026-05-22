@@ -113,6 +113,41 @@ def test_extend_merges_with_legacy_file_last_write_wins(store: VectorStore):
     np.testing.assert_array_equal(store.get_one("siglip2_image", "sha2"), [2.0, 2.0])
 
 
+def test_load_preserves_first_seen_order_with_last_write_value(store: VectorStore):
+    """load() returns shas in first-appearance order but the last-written
+    vector value — matching the merge semantics of the original dict path."""
+    store.append("siglip2_image", [
+        ("sha1", np.array([1.0, 1.0], dtype=np.float32)),
+        ("sha2", np.array([2.0, 2.0], dtype=np.float32)),
+    ])  # legacy file
+    store.extend("siglip2_image", [
+        ("sha1", np.array([9.0, 9.0], dtype=np.float32)),  # overrides sha1 value
+        ("sha3", np.array([3.0, 3.0], dtype=np.float32)),  # new
+    ])
+
+    shas, matrix = store.load("siglip2_image")
+    # sha1 keeps its first-seen position; sha3 appended after sha2.
+    assert list(shas) == ["sha1", "sha2", "sha3"]
+    np.testing.assert_array_equal(matrix[0], [9.0, 9.0])  # last write wins
+    np.testing.assert_array_equal(matrix[1], [2.0, 2.0])
+    np.testing.assert_array_equal(matrix[2], [3.0, 3.0])
+
+
+def test_load_wide_vectors_roundtrip(store: VectorStore):
+    """Multi-row, wide (D>1) matrix loads with correct shape and values —
+    guards the flat-buffer reshape in the zero-copy load path."""
+    rng = np.random.default_rng(0)
+    rows = [(f"sha{i}", rng.standard_normal(1152).astype(np.float32)) for i in range(50)]
+    store.extend("siglip2_image", rows)
+
+    shas, matrix = store.load("siglip2_image")
+    assert matrix.shape == (50, 1152)
+    assert matrix.dtype == np.float32
+    by_sha = {s: matrix[i] for i, s in enumerate(shas)}
+    for sha, vec in rows:
+        np.testing.assert_array_equal(by_sha[sha], vec)
+
+
 def test_extend_write_cost_is_constant_not_quadratic(store: VectorStore):
     """Writing N batches must not rewrite prior data — total bytes written
     grows linearly with rows, not with rows^2. Proxy: every part-file holds

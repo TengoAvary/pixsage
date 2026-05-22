@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import typer
@@ -788,6 +789,14 @@ def serve(
     except ImportError:
         typer.echo("FastAPI + uvicorn not installed. Run: pip install -e \".[search]\"", err=True)
         raise typer.Exit(code=1)
+
+    # Serve only ever loads already-downloaded models (install_runtime /
+    # `pixsage embed` fetched them). Force HF offline so each from_pretrained
+    # skips its hub ETag round-trip — those network checks add ~10s to every
+    # launch even when weights are fully cached. Must be set before transformers
+    # is imported (via build_app). setdefault lets a user override to refresh.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
     from pixsage.web.app import build_app
     fastapi_app = build_app(

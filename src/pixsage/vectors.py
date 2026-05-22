@@ -95,14 +95,57 @@ class VectorStore:
                 out[s] = t
         return out
 
+    @staticmethod
+    def _matrix_from_table(table: pa.Table) -> np.ndarray:
+        """Extract the ``vector`` list<float32> column as an (N, D) float32
+        matrix via Arrow's flat child buffer — no per-row Python objects.
+
+        ``flatten()`` respects list offsets, and our writers emit fixed-length
+        vectors with no nulls, so the flat buffer reshapes cleanly to (N, D)."""
+        n = table.num_rows
+        if n == 0:
+            return np.zeros((0, 0), dtype=np.float32)
+        col = table.column("vector").combine_chunks()
+        flat = col.flatten().to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
+        return flat.reshape(n, -1)
+
     def load(self, kind: str) -> tuple[np.ndarray, np.ndarray]:
-        """Return (sha_array, matrix). matrix is (N, D) float32; sha_array is (N,) object."""
-        rows = self._read_all(kind)
-        if not rows:
+        """Return (sha_array, matrix). matrix is (N, D) float32; sha_array is (N,) object.
+
+        Reads each file's vectors straight into numpy (Arrow zero-copy) and
+        concatenates, then dedups on sha256: first-seen order, last-written
+        value — matching ``_read_all``'s dict semantics without boxing every
+        float into a Python object."""
+        sha_chunks: list[list[str]] = []
+        mat_chunks: list[np.ndarray] = []
+        for path in self._ordered_files(kind):
+            table = pq.read_table(path, columns=["sha256", "vector"])
+            if table.num_rows == 0:
+                continue
+            sha_chunks.append(table.column("sha256").to_pylist())
+            mat_chunks.append(self._matrix_from_table(table))
+
+        if not mat_chunks:
             return np.array([], dtype=object), np.zeros((0, 0), dtype=np.float32)
-        shas = np.array([r["sha256"] for r in rows.values()], dtype=object)
-        matrix = np.array([r["vector"] for r in rows.values()], dtype=np.float32)
-        return shas, matrix
+
+        all_shas = [s for chunk in sha_chunks for s in chunk]
+        matrix = np.vstack(mat_chunks)
+
+        # Dedup: keep first-seen ordering, last-written row for each sha.
+        order: list[str] = []
+        seen: set[str] = set()
+        last_idx: dict[str, int] = {}
+        for i, s in enumerate(all_shas):
+            if s not in seen:
+                seen.add(s)
+                order.append(s)
+            last_idx[s] = i
+
+        if len(order) == len(all_shas):
+            # No duplicates — common single-file case, skip the gather.
+            return np.array(all_shas, dtype=object), matrix
+        rows = [last_idx[s] for s in order]
+        return np.array(order, dtype=object), matrix[rows]
 
     def missing_for(self, kind: str, all_shas: set[str]) -> set[str]:
         return all_shas - self.index(kind).keys()
