@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from pixsage.registry import DEFAULT_CAPTION_SIGNATURE, DEFAULT_IMAGE_SIGNATURE
 from pixsage.web.thumbs import ThumbSize
@@ -17,6 +17,24 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
     /cluster/{id}/label). See the comment above the cluster routes below for
     the why-it-exists / why-it's-disabled context.
     """
+    @app.middleware("http")
+    async def _gate_until_ready(request, call_next):
+        """Until the backend is ready, allow only the loading page, the status
+        poll, and static assets; everything else 503s so no handler touches
+        half-built app.state."""
+        path = request.url.path
+        if app.state.loader.status != "ready" and not (
+            path == "/" or path == "/status" or path.startswith("/static")
+        ):
+            return JSONResponse(
+                {"detail": "pixsage is still warming up"}, status_code=503
+            )
+        return await call_next(request)
+
+    @app.get("/status")
+    def status() -> JSONResponse:
+        return JSONResponse(app.state.loader.snapshot())
+
     @app.get("/", response_class=HTMLResponse)
     def index(
         request: Request,
@@ -24,6 +42,10 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         image_weight: float | None = None,
         notice: str | None = None,
     ) -> HTMLResponse:
+        if app.state.loader.status != "ready":
+            return app.state.templates.TemplateResponse(
+                request, "loading.html", {}
+            )
         templates = app.state.templates
         config = app.state.config
         multi = app.state.multi_search

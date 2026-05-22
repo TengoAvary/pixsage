@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pixsage — starting…</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="loading-page">
+  <main class="loading-box">
+    <h1>pixsage</h1>
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loading-headline">Warming up search models…</p>
+    <ul id="phases"></ul>
+    <p id="loading-error" hidden></p>
+  </main>
+
+  <script>
+    const PHASE_GLYPH = { done: "●", active: "◑", pending: "○" };
+
+    function render(data) {
+      const ul = document.getElementById("phases");
+      ul.innerHTML = "";
+      for (const p of data.phases) {
+        const li = document.createElement("li");
+        li.className = "phase phase-" + p.state;
+        li.textContent = (PHASE_GLYPH[p.state] || "○") + " " + p.label;
+        ul.appendChild(li);
+      }
+    }
+
+    async function poll() {
+      let data;
+      try {
+        const r = await fetch("/status", { cache: "no-store" });
+        data = await r.json();
+      } catch (e) {
+        return setTimeout(poll, 500);
+      }
+      render(data);
+      if (data.status === "ready") {
+        location.reload();
+        return;
+      }
+      if (data.status === "error") {
+        document.getElementById("loading-headline").textContent =
+          "Failed to start";
+        const err = document.getElementById("loading-error");
+        err.hidden = false;
+        err.textContent = (data.error || "Unknown error") +
+          " — check the terminal/logs.";
+        return;
+      }
+      setTimeout(poll, 500);
+    }
+
+    poll();
+  </script>
+</body>
+</html>
