@@ -23,8 +23,12 @@ def register(app: FastAPI, *, experimental_cluster_labelling: bool = False) -> N
         poll, and static assets; everything else 503s so no handler touches
         half-built app.state."""
         path = request.url.path
+        # Lock-free read: status is a monotonic loading->ready/error flag; no torn read under CPython, so snapshot()'s lock isn't needed here.
         if app.state.loader.status != "ready" and not (
-            path == "/" or path == "/status" or path.startswith("/static")
+            path == "/"
+            or path == "/status"
+            or path == "/static"
+            or path.startswith("/static/")
         ):
             return JSONResponse(
                 {"detail": "pixsage is still warming up"}, status_code=503
