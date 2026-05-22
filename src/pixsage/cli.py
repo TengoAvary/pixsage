@@ -803,6 +803,7 @@ def serve(
         photo_root=photo_root,
         registry_path=registry,
         embedder_name=embedder,
+        defer_load=True,
     )
 
     if not no_open:

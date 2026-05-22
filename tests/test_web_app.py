@@ -55,3 +55,23 @@ def test_startup_does_not_walk_filesystem(tmp_path, monkeypatch):
                         lambda *a, **k: called.__setitem__("n", called["n"] + 1) or [])
     build_app(registry_path=tmp_path / "catalogs.json", embedder_name="mock")
     assert called["n"] == 0
+
+
+def test_deferred_load_eventually_becomes_ready(tmp_path: Path):
+    """defer_load=True returns immediately in 'loading', then a background
+    thread flips to 'ready' (mock embedder loads instantly)."""
+    import time
+
+    from pixsage.web.app import build_app
+
+    app = build_app(
+        registry_path=tmp_path / "catalogs.json",
+        embedder_name="mock",
+        defer_load=True,
+    )
+    assert app.state.loader.status in ("loading", "ready")
+
+    deadline = time.time() + 5
+    while time.time() < deadline and app.state.loader.status != "ready":
+        time.sleep(0.05)
+    assert app.state.loader.status == "ready"
