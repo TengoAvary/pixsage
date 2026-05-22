@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -32,7 +33,7 @@ class BackendLoader:
         with self._lock:
             self._phases[index].state = "done"
 
-    def run(self, load_fn) -> None:
+    def run(self, load_fn: Callable[[BackendLoader], None]) -> None:
         """Execute load_fn(self); flip to ready on success, error on exception.
 
         On failure the phase that was active is left as-is (so the loading
