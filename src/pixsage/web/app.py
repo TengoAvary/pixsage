@@ -10,18 +10,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from pixsage.catalog import Catalog
 from pixsage.config import Config, DEFAULT_CONFIG_TOML, load_config, ensure_default_config
 from pixsage.multi_search import MultiSearchService
-from pixsage.path_translation import PathResolver
 from pixsage.registry import (
-    DEFAULT_CAPTION_SIGNATURE,
-    DEFAULT_IMAGE_SIGNATURE,
     Registry,
     derive_signatures,
 )
-from pixsage.search import SearchService
-from pixsage.vectors import VectorStore
 from pixsage.web.loader import BackendLoader
 
 
@@ -127,6 +121,7 @@ def build_app(
         ldr.finish_phase(0)
 
         ldr.start_phase(1)
+        # Safe to populate app.state incrementally: routes gate on loader.status == "ready", so no request reads these dicts until the final flip.
         for entry in registry.entries():
             if not (entry.enabled and entry.available):
                 continue
