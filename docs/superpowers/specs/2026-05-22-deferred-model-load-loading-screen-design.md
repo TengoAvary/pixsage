@@ -66,7 +66,7 @@ Phases (observable without instrumenting the embedder internals):
 
 ### `build_app()` split
 
-`build_app(photo_root, registry_path, embedder_name, *, defer_load=True,
+`build_app(photo_root, registry_path, embedder_name, *, defer_load=False,
 experimental_cluster_labelling=False)` is split into two halves:
 
 **Synchronous half (runs in `build_app`, ~instant):**
@@ -87,27 +87,31 @@ experimental_cluster_labelling=False)` is split into two halves:
 
 Encapsulates today's lines `app.py:90–143`:
 
-- `embedder.load(select_device())`
-- the per-catalog loop building `Catalog`, `PathResolver`, `ThumbnailCache`,
-  `VectorStore` + `SearchService` (`service.load()`), and `multi.add_catalog`
-- resolve the real `config` from the first catalog's `vocabulary.toml`
+- phase 1: `embedder.load(select_device())`, then `app.state.embedder = embedder`
+- phase 2: for each enabled+available registry entry, call the existing
+  `routes._load_catalog_into_multi(app, entry)` (which already builds `Catalog`,
+  `PathResolver`, `ThumbnailCache`, `VectorStore` + `SearchService.load()` and
+  calls `multi.add_catalog`, reading `app.state.embedder`), then resolve the
+  real `config` from the first catalog's `vocabulary.toml`.
 
-On completion it assigns the finished objects/dicts onto `app.state`
-(`multi_search`, `catalogs`, `path_resolvers`, `thumbs_by_catalog`,
-`photoindex_paths`, `embedder`, `config`) and sets `status="ready"` **last**.
+`status="ready"` is set **last**, after phase 2 completes.
 
-**Concurrency model:** the background thread builds all objects in locals,
-then publishes them to `app.state` and flips `status="ready"` as the final
-store. Routes read `app.state` only after checking `status == "ready"`. Under
-CPython's GIL, attribute stores are atomic and this publish-then-flag ordering
-is sufficient — no locks needed for the read path. `/status` reads a small
-snapshot (status/phases/error) which the loader updates with simple attribute
-assignment.
+**Concurrency model:** during loading, routes never read the backend
+containers — the `/` route renders the loading page and the middleware 503s
+everything else, both gating on `status`. So the background thread can populate
+`app.state.{catalogs,multi_search,...}` incrementally (reusing
+`_load_catalog_into_multi` as-is) without locking the read path; readers only
+touch those containers once `status == "ready"`, which is flipped as the final
+store. Under CPython's GIL the status store is atomic, so this
+populate-then-flag ordering is sufficient. `/status` reads a small snapshot
+(status/phases/error) guarded by a lock inside `BackendLoader`.
 
-**Threading:** when `defer_load=True` (default), `build_app` starts a
+**Threading:** when `defer_load=True`, `build_app` starts a
 `threading.Thread(target=loader.run, args=(load_fn,), daemon=True)` before
-returning. When `defer_load=False` (tests), it calls `loader.run(load_fn)`
-synchronously so the returned app is already `ready`.
+returning. When `defer_load=False` (the default), it calls `loader.run(load_fn)`
+synchronously so the returned app is already `ready`. `cli.serve` passes
+`defer_load=True`; the default stays `False` so existing callers/tests get
+today's synchronous, already-ready behavior unchanged.
 
 ### Routes
 
@@ -116,15 +120,12 @@ synchronously so the returned app is already `ready`.
   loading page poller.
 - **`GET /`**: if `status != "ready"`, render `loading.html` (ignore any
   `?q=`). If `ready`, behave exactly as today.
-- **Backend routes** (`/photo/...`, `/thumb/...`, `/cluster/...`, and the
-  catalog-mutation routes such as `/catalogs/add-scan`): return **503** with a
-  short "still warming up" body when `status != "ready"`. This gates both
-  search-dependent routes and registry-mutating routes behind readiness,
-  preventing any access to half-built state. Catalog management is unavailable
-  for the ~12s warmup by design.
-
-A small helper (e.g. `_require_ready(app)` raising `HTTPException(503)`) keeps
-the gate consistent across routes.
+- **All other routes:** a single HTTP middleware gates everything except `/`,
+  `/status`, and `/static/*`. When `status != "ready"` those gated routes return
+  **503** with a short "still warming up" JSON body. One middleware (rather than
+  editing each route) keeps the gate DRY and prevents any access to half-built
+  state — search-dependent routes and registry-mutating routes alike. Catalog
+  management is unavailable for the ~12s warmup by design.
 
 ### Loading page
 
@@ -172,29 +173,37 @@ poll sees error → loading page shows it, stops polling.
   `load_fn`. Assert phase transitions (`pending→active→done`), terminal
   `status="ready"`; and that a raising `load_fn` yields `status="error"` with
   the failing phase and message captured.
-- **Route tests** (extend `tests/test_web_app.py` and/or
-  `tests/test_cli_serve.py`): use `build_app(defer_load=False)` with the
-  existing mock embedder (`tests/test_embedders_mock.py`) for a deterministic
-  `ready` app; and a deferred/hand-driven loader for the `loading` state.
-  Assert:
-  - `/status` JSON shape in `loading`, `ready`, and `error` states.
+- **Route tests** (extend `tests/test_web_app.py`): build a ready app with
+  `build_app(..., embedder_name="mock", defer_load=False)`, then drive the
+  `loading` state deterministically by setting `app.state.loader.status =
+  "loading"` (no thread-timing races). Assert:
+  - `/status` JSON shape in `loading` and `ready` states.
   - `/` returns the loading page when not ready, the real search page when
     ready.
-  - a backend route (e.g. `/thumb/...`) returns 503 while loading.
+  - a gated route (e.g. `/thumb/x/y`) returns 503 while loading; `/status` and
+    `/static/...` stay 200.
+  - one integration test builds with `defer_load=True` + mock embedder and
+    polls `/status` (bounded ~5s wait) to confirm it flips to `ready`.
+- **Serve test** (extend `tests/test_cli_serve.py`): monkeypatch
+  `pixsage.web.app.build_app` and assert `serve` calls it with
+  `defer_load=True`.
 - No test downloads models (embedder is mocked, as today).
 
 ## Testability seam
 
-`build_app` gains a `defer_load: bool = True` parameter. Production
-(`cli.serve`) uses the default (background thread); tests pass `False` for a
-synchronously-`ready` app or drive the loader manually for the `loading`/`error`
-states.
+`build_app` gains a `defer_load: bool = False` parameter. `cli.serve` passes
+`defer_load=True` (background thread). The default `False` preserves today's
+synchronous, already-ready behavior for every existing caller and test; loading
+state in tests is reproduced by mutating `app.state.loader.status`.
 
 ## Files touched
 
 - `src/pixsage/web/loader.py` (new) — `BackendLoader`
-- `src/pixsage/web/app.py` — split `build_app`, add `defer_load`, start thread
-- `src/pixsage/web/routes.py` — `/status`, `/` gating, 503 guard helper
+- `src/pixsage/web/app.py` — split `build_app`, add `defer_load`, define
+  `load_fn`, start thread when deferred
+- `src/pixsage/web/routes.py` — `/status` route, `/` loading branch, readiness
+  middleware
+- `src/pixsage/cli.py` — `serve` passes `defer_load=True`
 - `src/pixsage/web/templates/loading.html` (new)
 - `src/pixsage/web/static/style.css` — loading layout + spinner block
 - `tests/test_loader.py` (new), `tests/test_web_app.py` /
