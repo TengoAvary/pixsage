@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import tomllib
 from pathlib import Path
 
@@ -9,18 +10,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from pixsage.catalog import Catalog
 from pixsage.config import Config, DEFAULT_CONFIG_TOML, load_config, ensure_default_config
 from pixsage.multi_search import MultiSearchService
-from pixsage.path_translation import PathResolver
 from pixsage.registry import (
-    DEFAULT_CAPTION_SIGNATURE,
-    DEFAULT_IMAGE_SIGNATURE,
     Registry,
     derive_signatures,
 )
-from pixsage.search import SearchService
-from pixsage.vectors import VectorStore
+from pixsage.web.loader import BackendLoader
 
 
 WEB_DIR = Path(__file__).parent
@@ -52,6 +48,7 @@ def build_app(
     registry_path: Path | None = None,
     embedder_name: str = "siglip2",
     *,
+    defer_load: bool = False,
     experimental_cluster_labelling: bool = False,
 ) -> FastAPI:
     """Construct the FastAPI app for multi-catalog search.
@@ -61,6 +58,10 @@ def build_app(
             registry (backward compat with the per-folder launcher model).
         registry_path: Override for the catalogs.json location.
         embedder_name: Which embedder to use for query encoding.
+        defer_load: If True, load the embedder + catalog vectors in a background
+            thread and return immediately (server answers a loading screen while
+            it warms up). If False (default), load synchronously so the returned
+            app is already ready — preserves behavior for tests and other callers.
         experimental_cluster_labelling: Off by default. See routes.py.
     """
     registry_path = registry_path or default_registry_path()
@@ -86,80 +87,55 @@ def build_app(
     registry.refresh_availability()
     registry.save()
 
-    # Build the embedder once (shared by all SearchServices).
-    from pixsage.cli import _build_embedder
-    from pixsage.device import select_device
-    embedder = _build_embedder(embedder_name)
-    embedder.load(select_device())
-
-    # Build per-catalog SearchService for each enabled+available entry.
-    multi = MultiSearchService()
-    catalogs: dict[str, Catalog] = {}
-    resolvers: dict[str, PathResolver] = {}
-    thumbs: dict[str, object] = {}
-    photoindex_paths: dict[str, Path] = {}
-    from pixsage.web.thumbs import ThumbnailCache
-
-    for entry in registry.entries():
-        if not (entry.enabled and entry.available):
-            continue
-        photoindex = Path(entry.photoindex_path)
-        catalog = Catalog(photoindex / "catalog.db")
-        catalog.init_schema()
-        catalogs[entry.id] = catalog
-        photoindex_paths[entry.id] = photoindex
-
-        stored_root = catalog.get_meta("photo_root_at_embed")
-        resolvers[entry.id] = PathResolver(
-            stored_root=stored_root,
-            runtime_root=photoindex.parent,
-        )
-        thumbs[entry.id] = ThumbnailCache(photoindex / "thumbs")
-
-        vectors = VectorStore(photoindex / "vectors")
-        service = SearchService(
-            store=vectors,
-            embedder=embedder,
-            image_kind=embedder.info.image_kind,
-            text_kind=embedder.info.text_kind,
-        )
-        service.load()
-        multi.add_catalog(
-            catalog_id=entry.id,
-            service=service,
-            image_sig=entry.image_embedder_signature or DEFAULT_IMAGE_SIGNATURE,
-            caption_sig=entry.caption_embedder_signature or DEFAULT_CAPTION_SIGNATURE,
-        )
-
-    # Resolve a config — first loaded catalog's vocabulary.toml wins; fall back
-    # to the in-tree default if no catalogs are loaded.
-    if catalogs:
-        first_id = next(iter(catalogs))
-        first_pi = photoindex_paths[first_id]
-        cfg_path = first_pi / "vocabulary.toml"
-        ensure_default_config(cfg_path)
-        config = load_config(cfg_path)
-    else:
-        config = _default_config()
-
+    # --- Synchronous half: cheap setup, returns near-instantly. ---
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
     app = FastAPI(title="pixsage")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    # Multi-catalog state — routes consume these dicts directly.
+    loader = BackendLoader(["Loading search model…", "Loading catalog vectors…"])
+    app.state.loader = loader
     app.state.registry = registry
     app.state.registry_path = registry_path
-    app.state.multi_search = multi
-    app.state.embedder = embedder
-    app.state.catalogs = catalogs  # dict {catalog_id: Catalog}
-    app.state.path_resolvers = resolvers  # dict {catalog_id: PathResolver}
-    app.state.thumbs_by_catalog = thumbs  # dict {catalog_id: ThumbnailCache}
-    app.state.photoindex_paths = photoindex_paths  # dict {catalog_id: Path}
-    app.state.config = config
+    app.state.multi_search = MultiSearchService()
+    app.state.embedder = None
+    app.state.catalogs = {}                # {catalog_id: Catalog}
+    app.state.path_resolvers = {}          # {catalog_id: PathResolver}
+    app.state.thumbs_by_catalog = {}       # {catalog_id: ThumbnailCache}
+    app.state.photoindex_paths = {}        # {catalog_id: Path}
+    app.state.config = _default_config()   # replaced by load_fn once catalogs load
     app.state.templates = templates
 
     from pixsage.web import routes
     routes.register(app, experimental_cluster_labelling=experimental_cluster_labelling)
+
+    # --- Slow half: embedder + per-catalog services. Run inline or threaded. ---
+    def load_fn(ldr: BackendLoader) -> None:
+        from pixsage.cli import _build_embedder
+        from pixsage.device import select_device
+        from pixsage.web.routes import _load_catalog_into_multi
+
+        ldr.start_phase(0)
+        embedder = _build_embedder(embedder_name)
+        embedder.load(select_device())
+        app.state.embedder = embedder
+        ldr.finish_phase(0)
+
+        ldr.start_phase(1)
+        # Safe to populate app.state incrementally: routes gate on loader.status == "ready", so no request reads these dicts until the final flip.
+        for entry in registry.entries():
+            if not (entry.enabled and entry.available):
+                continue
+            _load_catalog_into_multi(app, entry)
+        if app.state.catalogs:
+            first_id = next(iter(app.state.catalogs))
+            cfg_path = app.state.photoindex_paths[first_id] / "vocabulary.toml"
+            ensure_default_config(cfg_path)
+            app.state.config = load_config(cfg_path)
+        ldr.finish_phase(1)
+
+    if defer_load:
+        threading.Thread(target=loader.run, args=(load_fn,), daemon=True).start()
+    else:
+        loader.run(load_fn)
 
     return app

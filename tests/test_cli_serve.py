@@ -71,3 +71,18 @@ def test_serve_respects_user_hf_offline_override(monkeypatch, tmp_path: Path):
     runner.invoke(app, ["serve", "--no-open", "--registry", str(tmp_path / "r.json")])
 
     assert seen["HF_HUB_OFFLINE"] == "0"
+
+
+def test_serve_defers_model_load(monkeypatch, tmp_path: Path):
+    """serve must build the app with defer_load=True so the server answers a
+    loading screen instead of blocking ~12s on model load before binding."""
+    captured: dict[str, object] = {}
+
+    def fake_build_app(**kwargs):
+        captured.update(kwargs)
+        raise SystemExit(0)  # bail before uvicorn.run
+
+    monkeypatch.setattr("pixsage.web.app.build_app", fake_build_app)
+    runner.invoke(app, ["serve", "--no-open", "--registry", str(tmp_path / "r.json")])
+
+    assert captured.get("defer_load") is True

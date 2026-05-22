@@ -50,3 +50,41 @@ header nav { float: right; margin-top: -2rem; font-size: 0.9rem; }
 .label-form .fineprint { font-size: 0.75rem; color: #666; margin-top: 0.6rem; }
 .cluster-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px; }
 .cluster-photo-grid img { width: 100%; height: 160px; object-fit: cover; display: block; }
+
+/* ── Loading screen ──────────────────────────────────────────────── */
+.loading-page {
+  display: flex;
+  min-height: 100vh;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  background: #f7f7f8;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #222;
+}
+.loading-box {
+  text-align: center;
+  max-width: 22rem;
+}
+.loading-box h1 { margin: 0 0 1.25rem; font-weight: 600; }
+.spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0 auto 1rem;
+  border: 3px solid #d8d8de;
+  border-top-color: #555;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#phases {
+  list-style: none;
+  padding: 0;
+  margin: 1rem auto 0;
+  display: inline-block;
+  text-align: left;
+}
+.phase { padding: 0.15rem 0; color: #999; }
+.phase-active { color: #222; font-weight: 600; }
+.phase-done { color: #2a8a3e; }
+#loading-error { color: #b00020; margin-top: 1rem; font-size: 0.9rem; }
