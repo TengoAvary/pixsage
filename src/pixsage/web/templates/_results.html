@@ -2,11 +2,9 @@
 <div class="results-meta">
   {% if query %}{{ hits|length }} results for "{{ query }}"{% else %}{{ hits|length }} results{% endif %}
 </div>
-<div class="grid">
-  {% for hit in hits %}
-    {% include "_card.html" %}
-  {% endfor %}
-</div>
+{% for hit in hits %}
+  {% include "_card.html" %}
+{% endfor %}
 {% else %}
 <div class="results-meta">No results.</div>
 {% endif %}
