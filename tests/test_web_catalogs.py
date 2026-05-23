@@ -319,5 +319,5 @@ def test_home_renders_collapsed_catalogs_strip(tmp_path: Path) -> None:
         r = client.get("/")
         assert r.status_code == 200
         assert 'class="catalogs-strip"' in r.text
-        # The strip surfaces a Manage affordance.
-        assert "Manage" in r.text
+        # The strip surfaces a Manage affordance via its own button class.
+        assert 'class="cs-manage"' in r.text
