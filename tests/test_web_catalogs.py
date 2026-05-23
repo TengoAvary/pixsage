@@ -295,6 +295,41 @@ def test_add_scan_rejects_bad_path(tmp_path):
         assert r.status_code == 400
 
 
+def test_home_renders_catalogs_modal_dialog(tmp_path: Path) -> None:
+    """The catalog management UI must be rendered as a `<dialog>` with
+    id `catalogs-modal`, not the old `<details>` panel. The inner
+    form actions (rename / toggle / remove / refresh / add-scan) and
+    the nested folder-picker `<dialog id="catalog-browser">` must
+    still be present.
+    """
+    from pixsage.web.app import build_app
+
+    sony = tmp_path / "Sony"
+    _make_catalog(sony / ".photoindex", photo_root=sony)
+
+    registry_path = tmp_path / "catalogs.json"
+    reg = Registry(registry_path)
+    reg.load()
+    reg.add(photoindex_path=str((sony / ".photoindex").resolve()),
+            label="Sony",
+            image_embedder_signature="siglip2-so400m-patch14-384@v1",
+            caption_embedder_signature="minilm-L6-v2@v2")
+    reg.save()
+
+    app = build_app(registry_path=registry_path, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/")
+        assert r.status_code == 200
+        assert '<dialog class="catalogs-modal" id="catalogs-modal">' in r.text
+        # Old wrapper must be gone.
+        assert 'class="catalogs-panel"' not in r.text
+        # Form actions still present.
+        assert "/catalogs/refresh" in r.text
+        assert "/catalogs/add-scan" in r.text
+        # Folder-picker dialog still present.
+        assert 'id="catalog-browser"' in r.text
+
+
 def test_home_renders_collapsed_catalogs_strip(tmp_path: Path) -> None:
     """The home page renders a one-line `.catalogs-strip` summary
     above the search form. The full management UI lives in a modal

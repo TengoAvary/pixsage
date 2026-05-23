@@ -15,15 +15,19 @@
     <span class="cs-path">offline</span>
   {% endif %}
   <button type="button" class="cs-manage"
-          onclick="var m=document.getElementById('catalogs-modal'); if(m)m.showModal();">
+          onclick="document.getElementById('catalogs-modal').showModal();">
     {% if _count == 0 %}Add one ▸{% else %}Manage ▸{% endif %}
   </button>
 </div>
 
-{# Catalog manager panel. Rendered above the search form on /. #}
-{% set has_any_enabled = entries | selectattr("enabled") | selectattr("available") | list | length > 0 %}
-<details class="catalogs-panel" {% if not has_any_enabled %}open{% endif %}>
-  <summary>Catalogs ({{ entries | length }})</summary>
+{# Catalog manager modal. Opened from the strip's Manage button. #}
+<dialog class="catalogs-modal" id="catalogs-modal">
+  <header class="catalogs-modal-header">
+    <h2>Catalogs ({{ entries | length }})</h2>
+    <button type="button" class="modal-close" aria-label="Close"
+            onclick="document.getElementById('catalogs-modal').close()">×</button>
+  </header>
+  <div class="catalogs-modal-body">
   {% if notice %}<p class="catalog-notice">{{ notice }}</p>{% endif %}
   {% if entries %}
     <ul class="catalog-list">
@@ -112,4 +116,15 @@
       .addEventListener('click', function () { dlg.showModal(); load(''); });
   })();
   </script>
-</details>
+  <script>
+  (function () {
+    var modal = document.getElementById('catalogs-modal');
+    if (!modal) return;
+    // Close when the user clicks the backdrop (outside the modal box).
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.close();
+    });
+  })();
+  </script>
+  </div>
+</dialog>
