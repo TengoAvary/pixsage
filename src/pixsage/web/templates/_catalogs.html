@@ -21,9 +21,9 @@
 </div>
 
 {# Catalog manager modal. Opened from the strip's Manage button. #}
-<dialog class="catalogs-modal" id="catalogs-modal">
+<dialog class="catalogs-modal" id="catalogs-modal" aria-labelledby="catalogs-modal-title">
   <header class="catalogs-modal-header">
-    <h2>Catalogs ({{ entries | length }})</h2>
+    <h2 id="catalogs-modal-title">Catalogs ({{ entries | length }})</h2>
     <button type="button" class="modal-close" aria-label="Close"
             onclick="this.closest('dialog').close()">×</button>
   </header>
@@ -60,8 +60,8 @@
     </form>
   </div>
 
-  <dialog id="catalog-browser">
-    <h3>Pick a folder to scan for catalogs</h3>
+  <dialog id="catalog-browser" aria-labelledby="catalog-browser-title">
+    <h3 id="catalog-browser-title">Pick a folder to scan for catalogs</h3>
     <p class="cb-current" id="cb-current"></p>
     <ul id="cb-list" class="cb-list"></ul>
     <form method="post" action="/catalogs/add-scan">
