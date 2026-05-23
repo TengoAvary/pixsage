@@ -18,14 +18,16 @@
       <h2>More like {{ similar_to.filename }}</h2>
     {% else %}
       <form id="search-form" method="get" action="/">
-        <input type="search" name="q" placeholder="Describe what you want to find…"
-               value="{{ query or '' }}" autofocus />
-        <label>
-          Caption ⇄ Visual
-          <input type="range" name="image_weight" min="0" max="1" step="0.05"
-                 value="{{ default_image_weight }}" />
-        </label>
-        <button type="submit">Search</button>
+        <div class="search-row">
+          <input type="search" name="q" placeholder="Describe what you want to find…"
+                 value="{{ query or '' }}" autofocus />
+          <button type="submit">Search</button>
+        </div>
+        <div class="weight">
+          <label for="image-weight">Caption ⇄ Visual</label>
+          <input id="image-weight" type="range" name="image_weight"
+                 min="0" max="1" step="0.05" value="{{ default_image_weight }}" />
+        </div>
       </form>
     {% endif %}
     <section id="results">

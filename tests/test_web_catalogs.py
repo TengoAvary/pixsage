@@ -330,6 +330,22 @@ def test_home_renders_catalogs_modal_dialog(tmp_path: Path) -> None:
         assert 'id="catalog-browser"' in r.text
 
 
+def test_home_search_slider_lives_in_weight_row(tmp_path: Path) -> None:
+    """The Caption ⇄ Visual slider sits in a sibling `.weight` row
+    below the search input, not inline with the input.
+    """
+    from pixsage.web.app import build_app
+
+    registry_path = tmp_path / "catalogs.json"
+    app = build_app(registry_path=registry_path, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/")
+        assert r.status_code == 200
+        assert 'class="weight"' in r.text
+        # The slider's `name` attribute is unchanged.
+        assert 'name="image_weight"' in r.text
+
+
 def test_home_renders_collapsed_catalogs_strip(tmp_path: Path) -> None:
     """The home page renders a one-line `.catalogs-strip` summary
     above the search form. The full management UI lives in a modal
