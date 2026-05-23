@@ -3,9 +3,48 @@ header { display: flex; align-items: baseline; justify-content: space-between; p
 header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
 header h1 a { color: inherit; text-decoration: none; }
 main { padding: 1.5rem; max-width: 1400px; margin: 0 auto; box-sizing: border-box; }
-#search-form { display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; }
-#search-form input[type=search] { flex: 1; padding: 0.5rem; font-size: 1rem; background: #222; color: #eee; border: 1px solid #444; }
-#search-form button { padding: 0.5rem 1rem; background: #2a8; color: white; border: 0; cursor: pointer; }
+/* ── Search form ────────────────────────────────────────────────── */
+#search-form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; }
+#search-form .search-row { display: flex; gap: 0.6rem; align-items: stretch; }
+#search-form input[type=search] {
+  flex: 1; padding: 0.85rem 1.1rem; font-size: 1.05rem;
+  background: #202020; color: #eee; border: 1px solid #2a2a2a;
+  border-radius: 999px; outline: none;
+}
+#search-form input[type=search]::placeholder { color: #777; }
+#search-form input[type=search]:focus { border-color: #58a6ff; }
+#search-form button[type=submit] {
+  padding: 0 1.4rem; background: #2a8; color: #0d0d0d;
+  border: 0; border-radius: 999px; cursor: pointer;
+  font-weight: 600; font-size: 0.95rem; letter-spacing: 0.2px;
+}
+#search-form button[type=submit]:hover { background: #36b993; }
+#search-form .weight { display: flex; align-items: center; gap: 0.75rem; padding: 0 0.6rem; font-size: 0.85rem; color: #999; }
+#search-form .weight label { color: #999; }
+#search-form .weight input[type=range] {
+  flex: 1; max-width: 260px;
+  accent-color: #58a6ff;
+}
+/* ── Collapsed catalogs strip (above search) ───────────────────── */
+.catalogs-strip {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.75rem; margin-bottom: 1rem;
+  font-size: 0.85rem; color: #999;
+  background: #141414; border: 1px solid #1f1f1f; border-radius: 6px;
+}
+.catalogs-strip .cs-count { color: #ddd; font-weight: 500; }
+.catalogs-strip .cs-sep { color: #555; }
+.catalogs-strip .cs-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem; color: #999;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; flex: 1;
+}
+.catalogs-strip .cs-manage {
+  background: transparent; border: 0; color: #58a6ff;
+  cursor: pointer; font: inherit; padding: 0; margin-left: auto;
+}
+.catalogs-strip .cs-manage:hover { text-decoration: underline; }
 #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
 .card { background: #1a1a1a; padding: 0.25rem; }
 .card img { width: 100%; height: 200px; object-fit: cover; display: block; }
