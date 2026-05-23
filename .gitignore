@@ -44,6 +44,9 @@ pytest_output.txt
 .smoke.log
 exports/
 
+# Brainstorming visual companion sessions
+.superpowers/
+
 # Session scratch / per-run pipeline artifacts (machine-specific:
 # hardcoded drive paths, runtime logs, generated maps). The portable
 # tool that produces the map lives at scripts/build_iphone_map.py.
