@@ -25,7 +25,7 @@
   <header class="catalogs-modal-header">
     <h2>Catalogs ({{ entries | length }})</h2>
     <button type="button" class="modal-close" aria-label="Close"
-            onclick="document.getElementById('catalogs-modal').close()">×</button>
+            onclick="this.closest('dialog').close()">×</button>
   </header>
   <div class="catalogs-modal-body">
   {% if notice %}<p class="catalog-notice">{{ notice }}</p>{% endif %}
