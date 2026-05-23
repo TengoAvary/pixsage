@@ -293,3 +293,31 @@ def test_add_scan_rejects_bad_path(tmp_path):
         r = client.post("/catalogs/add-scan", data={"path": str(tmp_path / "nope")},
                          follow_redirects=False)
         assert r.status_code == 400
+
+
+def test_home_renders_collapsed_catalogs_strip(tmp_path: Path) -> None:
+    """The home page renders a one-line `.catalogs-strip` summary
+    above the search form. The full management UI lives in a modal
+    that is opened from this strip's `Manage ▸` button.
+    """
+    from pixsage.web.app import build_app
+
+    sony = tmp_path / "Sony"
+    _make_catalog(sony / ".photoindex", photo_root=sony)
+
+    registry_path = tmp_path / "catalogs.json"
+    reg = Registry(registry_path)
+    reg.load()
+    reg.add(photoindex_path=str((sony / ".photoindex").resolve()),
+            label="Sony",
+            image_embedder_signature="siglip2-so400m-patch14-384@v1",
+            caption_embedder_signature="minilm-L6-v2@v2")
+    reg.save()
+
+    app = build_app(registry_path=registry_path, embedder_name="mock")
+    with TestClient(app) as client:
+        r = client.get("/")
+        assert r.status_code == 200
+        assert 'class="catalogs-strip"' in r.text
+        # The strip surfaces a Manage affordance.
+        assert "Manage" in r.text

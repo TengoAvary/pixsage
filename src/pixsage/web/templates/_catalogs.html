@@ -1,3 +1,23 @@
+{# Collapsed one-line summary shown on the home page. Clicking Manage
+   opens the catalogs modal that holds the full list / actions. #}
+{% set _entries = registry.entries() | list %}
+{% set _first_available = (_entries | selectattr('available') | list | first) %}
+{% set _count = _entries | length %}
+<div class="catalogs-strip">
+  <span class="cs-count">{{ _count }} catalog{{ '' if _count == 1 else 's' }}</span>
+  {% if _first_available %}
+    <span class="cs-sep">·</span>
+    <span class="cs-path">{{ _first_available.photoindex_path }}</span>
+  {% elif _count > 0 %}
+    <span class="cs-sep">·</span>
+    <span class="cs-path">offline</span>
+  {% endif %}
+  <button type="button" class="cs-manage"
+          onclick="document.getElementById('catalogs-modal').showModal()">
+    {% if _count == 0 %}Add one ▸{% else %}Manage ▸{% endif %}
+  </button>
+</div>
+
 {# Catalog manager panel. Rendered above the search form on /. #}
 {% set entries = registry.entries() | list %}
 {% set has_any_enabled = entries | selectattr("enabled") | selectattr("available") | list | length > 0 %}
