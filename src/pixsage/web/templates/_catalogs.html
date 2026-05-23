@@ -1,8 +1,33 @@
-{# Catalog manager panel. Rendered above the search form on /. #}
+{# Shared snapshot — used by both the strip and the panel below. #}
 {% set entries = registry.entries() | list %}
-{% set has_any_enabled = entries | selectattr("enabled") | selectattr("available") | list | length > 0 %}
-<details class="catalogs-panel" {% if not has_any_enabled %}open{% endif %}>
-  <summary>Catalogs ({{ entries | length }})</summary>
+
+{# Collapsed one-line summary shown on the home page. Clicking Manage
+   opens the catalogs modal that holds the full list / actions. #}
+{% set _first_available = (entries | selectattr('available') | list | first) %}
+{% set _count = entries | length %}
+<div class="catalogs-strip">
+  <span class="cs-count">{{ _count }} catalog{{ '' if _count == 1 else 's' }}</span>
+  {% if _first_available %}
+    <span class="cs-sep">·</span>
+    <span class="cs-path">{{ _first_available.photoindex_path }}</span>
+  {% elif _count > 0 %}
+    <span class="cs-sep">·</span>
+    <span class="cs-path">offline</span>
+  {% endif %}
+  <button type="button" class="cs-manage"
+          onclick="document.getElementById('catalogs-modal').showModal();">
+    {% if _count == 0 %}Add one ▸{% else %}Manage ▸{% endif %}
+  </button>
+</div>
+
+{# Catalog manager modal. Opened from the strip's Manage button. #}
+<dialog class="catalogs-modal" id="catalogs-modal" aria-labelledby="catalogs-modal-title">
+  <header class="catalogs-modal-header">
+    <h2 id="catalogs-modal-title">Catalogs ({{ entries | length }})</h2>
+    <button type="button" class="modal-close" aria-label="Close"
+            onclick="this.closest('dialog').close()">×</button>
+  </header>
+  <div class="catalogs-modal-body">
   {% if notice %}<p class="catalog-notice">{{ notice }}</p>{% endif %}
   {% if entries %}
     <ul class="catalog-list">
@@ -35,8 +60,8 @@
     </form>
   </div>
 
-  <dialog id="catalog-browser">
-    <h3>Pick a folder to scan for catalogs</h3>
+  <dialog id="catalog-browser" aria-labelledby="catalog-browser-title">
+    <h3 id="catalog-browser-title">Pick a folder to scan for catalogs</h3>
     <p class="cb-current" id="cb-current"></p>
     <ul id="cb-list" class="cb-list"></ul>
     <form method="post" action="/catalogs/add-scan">
@@ -91,4 +116,15 @@
       .addEventListener('click', function () { dlg.showModal(); load(''); });
   })();
   </script>
-</details>
+  <script>
+  (function () {
+    var modal = document.getElementById('catalogs-modal');
+    if (!modal) return;
+    // Close when the user clicks the backdrop (outside the modal box).
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.close();
+    });
+  })();
+  </script>
+  </div>
+</dialog>
