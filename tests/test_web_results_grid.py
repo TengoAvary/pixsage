@@ -14,7 +14,7 @@ def _templates_dir() -> Path:
 def _fake_hit(n: int) -> types.SimpleNamespace:
     """Return a minimal hit namespace that satisfies _card.html's accessors."""
     return types.SimpleNamespace(
-        sha256=f"{'a' * 64}",
+        sha256="a" * 64,
         catalog_id=n,
         filename=f"photo_{n}.jpg",
         score=0.9 - n * 0.1,
