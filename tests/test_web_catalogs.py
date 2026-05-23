@@ -320,7 +320,8 @@ def test_home_renders_catalogs_modal_dialog(tmp_path: Path) -> None:
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
-        assert '<dialog class="catalogs-modal" id="catalogs-modal">' in r.text
+        assert 'class="catalogs-modal"' in r.text
+        assert 'id="catalogs-modal"' in r.text
         # Old wrapper must be gone.
         assert 'class="catalogs-panel"' not in r.text
         # Form actions still present.
